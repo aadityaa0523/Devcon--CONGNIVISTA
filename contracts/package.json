@@ -4,12 +4,12 @@
   "description": "VoxVault smart contracts",
   "main": "index.js",
   "scripts": {
-    "compile": "hardhat compile",
-    "test": "hardhat test",
-    "deploy": "hardhat run scripts/deploy.ts --network sepolia",
-    "deploy:local": "hardhat run scripts/deploy.ts",
-    "verify": "hardhat verify",
-    "typechain": "hardhat typechain",
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "deploy": "npx hardhat run scripts/deploy.ts --network sepolia",
+    "deploy:local": "npx hardhat run scripts/deploy.ts",
+    "verify": "npx hardhat verify",
+    "typechain": "npx hardhat typechain",
     "postcompile": "node ../scripts/copy-abi.mjs"
   },
   "keywords": [
@@ -19,6 +19,5 @@
     "smart-wallet"
   ],
   "author": "VoxVault",
-  "license": "MIT",
-  "type": "module"
+  "license": "MIT"
 }
