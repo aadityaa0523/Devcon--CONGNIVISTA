@@ -57,7 +57,9 @@ export function useBiometricCapture() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastOutcome, setLastOutcome] = useState<VerificationOutcome | null>(null);
+  const [lastVector, setLastVector] = useState<Float32Array | null>(null);
   const [threshold, setThresholdState] = useState(DEFAULT_THRESHOLD);
+  const [level, setLevel] = useState(0);
 
   useEffect(() => {
     setEnrolment(loadEnrolment());
@@ -85,7 +87,7 @@ export function useBiometricCapture() {
       setError(null);
       setStatus("Recording — say your passphrase now");
       try {
-        const result = await captureVoiceSample(durationMs);
+        const result = await captureVoiceSample(durationMs, setLevel);
         const commitment = commitmentFromFeatures(result.features);
 
         const record: Enrolment = {
@@ -95,6 +97,7 @@ export function useBiometricCapture() {
         };
         window.localStorage.setItem(ENROLMENT_KEY, JSON.stringify(record));
         setEnrolment(record);
+        setLastVector(result.features);
         setLastOutcome(null);
         setStatus(
           `Enrolled from ${result.voicedFrameCount} voiced frames of ${result.durationSeconds.toFixed(1)}s audio`
@@ -124,7 +127,7 @@ export function useBiometricCapture() {
       setError(null);
       setStatus("Recording — say the same passphrase");
       try {
-        const result = await captureVoiceSample(durationMs);
+        const result = await captureVoiceSample(durationMs, setLevel);
         const enrolled = Float32Array.from(stored.features);
         const comparison = compareFeatures(enrolled, result.features);
 
@@ -136,6 +139,7 @@ export function useBiometricCapture() {
         };
 
         setLastOutcome(outcome);
+        setLastVector(result.features);
         setStatus(null);
         return outcome;
       } catch (err) {
@@ -160,9 +164,11 @@ export function useBiometricCapture() {
     enrolment,
     hasEnrolment: enrolment !== null,
     isCapturing,
+    level,
     status,
     error,
     lastOutcome,
+    lastVector,
     threshold,
     setThreshold,
     enrol,

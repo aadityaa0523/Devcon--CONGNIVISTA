@@ -3,21 +3,43 @@ import { BiometricPanel } from "./components/BiometricPanel";
 import { ChallengePanel } from "./components/ChallengePanel";
 import { SessionKeyPanel } from "./components/SessionKeyPanel";
 import { RecoveryPanel } from "./components/RecoveryPanel";
+import { VoiceOrb, type OrbState } from "./components/VoiceOrb";
+import { BiometricProvider, useBiometrics } from "./hooks/BiometricContext";
 import { useVoxVaultContract } from "./hooks/useVoxVaultContract";
 
 const ZERO_HASH = "0x" + "0".repeat(64);
 
 export default function App() {
+  return (
+    <BiometricProvider>
+      <Dashboard />
+    </BiometricProvider>
+  );
+}
+
+function Dashboard() {
   const { contractAddress, owner, commitment, isOwner, isConnected, error } =
     useVoxVaultContract();
+  const { isCapturing, level, lastOutcome } = useBiometrics();
 
   const configured =
     !!contractAddress &&
     contractAddress !== "0x0000000000000000000000000000000000000000";
 
+  // The orb mirrors the most recent thing that happened, so the hero always
+  // reflects real state rather than looping decoratively.
+  const orbState: OrbState = isCapturing
+    ? "listening"
+    : lastOutcome
+      ? lastOutcome.passed
+        ? "verified"
+        : "failed"
+      : "idle";
+
   return (
     <main className="shell">
       <header className="masthead">
+        <VoiceOrb state={orbState} level={level} size={224} />
         <h1 className="wordmark">
           Prove it's you.
           <br />
@@ -60,10 +82,20 @@ export default function App() {
 
       {error && <p className="notice error">{error}</p>}
 
-      <BiometricPanel />
-      <ChallengePanel />
-      <SessionKeyPanel />
-      <RecoveryPanel />
+      <div className="grid">
+        <div className="span-7">
+          <BiometricPanel />
+        </div>
+        <div className="span-5">
+          <ChallengePanel />
+        </div>
+        <div className="span-5">
+          <SessionKeyPanel />
+        </div>
+        <div className="span-7">
+          <RecoveryPanel />
+        </div>
+      </div>
 
       <footer className="footnote">
         <strong>What the chain does and does not enforce.</strong> The on-chain

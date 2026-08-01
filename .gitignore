@@ -50,3 +50,6 @@ CLAUDE.md
 BUILD_STATUS.md
 /.env.example
 frontend/src/App.css
+
+# Obsidian local UI state (pane layout, scroll positions) — churns every session
+vault/.obsidian/workspace.json

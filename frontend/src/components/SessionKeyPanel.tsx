@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { useVoxVaultContract } from "../hooks/useVoxVaultContract";
-import { useBiometricCapture } from "../hooks/useBiometricCapture";
+import { useBiometrics } from "../hooks/BiometricContext";
 import {
   clearSessionKey,
   formatSessionKeyExpiry,
@@ -12,6 +12,7 @@ import {
   saveSessionKey,
 } from "../lib/sessionKey";
 import { getVoxVaultContract } from "../lib/contract";
+import { CountdownRing } from "./CountdownRing";
 
 /** Gas float sent to the session key so it can pay for its own transactions. */
 const SESSION_KEY_GAS_FUNDING = "0.003";
@@ -26,7 +27,7 @@ const SESSION_KEY_GAS_FUNDING = "0.003";
 export function SessionKeyPanel() {
   const { contract, contractAddress, isOwner, isConnected, send, refresh } =
     useVoxVaultContract();
-  const { hasEnrolment, verify } = useBiometricCapture();
+  const { hasEnrolment, verify } = useBiometrics();
 
   const [remaining, setRemaining] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -151,8 +152,23 @@ export function SessionKeyPanel() {
 
   return (
     <section className="panel panel--session">
-      <div className="eyebrow"><span className={isActive ? "dot live" : "dot"} />Session keys</div>
-      <h2>Transact without signing</h2>
+      <div className="panel-head">
+        <div>
+          <div className="eyebrow">
+            <span className={isActive ? "dot live" : "dot"} />Session keys
+          </div>
+          <h2>Transact without signing</h2>
+        </div>
+        {isActive && (
+          <CountdownRing
+            remaining={remaining}
+            total={1800}
+            label={formatSessionKeyExpiry(remaining)}
+            colour="var(--violet)"
+            size={88}
+          />
+        )}
+      </div>
       <p>
         Authorise once with your voice, then transact without further signing until
         the key expires on-chain.

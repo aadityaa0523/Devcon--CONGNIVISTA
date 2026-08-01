@@ -355,7 +355,10 @@ export function extractVoiceFeatures(
  *
  * Requires a secure context (https or localhost) and a user gesture.
  */
-export async function recordAudio(durationMs: number): Promise<RecordedAudio> {
+export async function recordAudio(
+  durationMs: number,
+  onLevel?: (level: number) => void
+): Promise<RecordedAudio> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new VoiceCaptureError(
       "Microphone access unavailable. This page must be served over https or localhost."
@@ -371,6 +374,35 @@ export async function recordAudio(durationMs: number): Promise<RecordedAudio> {
         err instanceof Error ? err.message : String(err)
       })`
     );
+  }
+
+  // Live amplitude for the visualiser. Separate from the analysis path — this is
+  // only for display and never feeds the feature vector, so it cannot affect
+  // determinism.
+  let meter: { ctx: AudioContext; raf: number } | null = null;
+  if (onLevel) {
+    try {
+      const ctx = new (window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext)();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.75;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+
+      const buf = new Float32Array(analyser.fftSize);
+      const tick = () => {
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        // Scale RMS into a usable 0-1 display range; speech rarely exceeds ~0.3.
+        onLevel(Math.min(1, Math.sqrt(sum / buf.length) * 4));
+        meter!.raf = requestAnimationFrame(tick);
+      };
+      meter = { ctx, raf: requestAnimationFrame(tick) };
+    } catch {
+      meter = null; // visualiser is optional; never block capture on it
+    }
   }
 
   try {
@@ -409,6 +441,11 @@ export async function recordAudio(durationMs: number): Promise<RecordedAudio> {
   } finally {
     // Always release the microphone, so the browser's recording indicator clears
     // even when extraction throws.
+    if (meter) {
+      cancelAnimationFrame(meter.raf);
+      void meter.ctx.close();
+      onLevel?.(0);
+    }
     stream.getTracks().forEach((track) => track.stop());
   }
 }
@@ -417,9 +454,10 @@ export async function recordAudio(durationMs: number): Promise<RecordedAudio> {
  * Record and extract in one step — the entry point the UI calls.
  */
 export async function captureVoiceSample(
-  durationMs = 3000
+  durationMs = 3000,
+  onLevel?: (level: number) => void
 ): Promise<VoiceCaptureResult> {
-  const { samples, sampleRate } = await recordAudio(durationMs);
+  const { samples, sampleRate } = await recordAudio(durationMs, onLevel);
   const { features, voicedFrameCount } = extractVoiceFeatures(
     samples,
     sampleRate
@@ -454,14 +492,15 @@ export interface ChallengeCaptureResult extends VoiceCaptureResult {
  */
 export async function captureVoiceWithChallenge(
   challenge: number | string,
-  durationMs = 5000
+  durationMs = 5000,
+  onLevel?: (level: number) => void
 ): Promise<ChallengeCaptureResult> {
   const available = isSpeechRecognitionSupported();
   const transcription = available ? startTranscription() : null;
 
   let capture: VoiceCaptureResult;
   try {
-    capture = await captureVoiceSample(durationMs);
+    capture = await captureVoiceSample(durationMs, onLevel);
   } catch (err) {
     // Never leave the recogniser holding the microphone if capture fails.
     await transcription?.stop();

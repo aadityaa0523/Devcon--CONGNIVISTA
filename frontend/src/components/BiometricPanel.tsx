@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { useBiometricCapture } from "../hooks/useBiometricCapture";
+import { useBiometrics } from "../hooks/BiometricContext";
 import { useVoxVaultContract } from "../hooks/useVoxVaultContract";
 import { getCompressionStats } from "../lib/quantization";
 import { FEATURE_DIMS } from "../lib/biometrics";
+import { FeatureHeatmap } from "./FeatureHeatmap";
 
 const compression = getCompressionStats(FEATURE_DIMS);
 
@@ -22,12 +23,13 @@ export function BiometricPanel() {
     status,
     error,
     lastOutcome,
+    lastVector,
     threshold,
     setThreshold,
     enrol,
     verify,
     clearEnrolment,
-  } = useBiometricCapture();
+  } = useBiometrics();
 
   const { isOwner, isConnected, send } = useVoxVaultContract();
   const [txStatus, setTxStatus] = useState<string | null>(null);
@@ -115,6 +117,10 @@ export function BiometricPanel() {
           Enrolled {new Date(enrolment.enrolledAt).toLocaleTimeString()} ·{" "}
           {FEATURE_DIMS} dims · <code>{short(enrolment.commitment)}</code>
         </p>
+      )}
+
+      {lastVector && (
+        <FeatureHeatmap features={lastVector} label="Feature vector" />
       )}
 
       {lastOutcome && (

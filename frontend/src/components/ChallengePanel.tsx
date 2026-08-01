@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useVoxVaultContract } from "../hooks/useVoxVaultContract";
-import { useBiometricCapture } from "../hooks/useBiometricCapture";
+import { useBiometrics } from "../hooks/BiometricContext";
 import { captureVoiceWithChallenge, VoiceCaptureError } from "../lib/biometrics";
 import { compareFeatures, type ComparisonResult } from "../lib/quantization";
 import { commitmentFromFeaturesAndChallenge } from "../lib/hashing";
 import { isSpeechRecognitionSupported } from "../lib/speech";
+import { CountdownRing } from "./CountdownRing";
 
 interface Outcome {
   comparison: ComparisonResult;
@@ -26,7 +27,7 @@ interface Outcome {
 export function ChallengePanel() {
   const { challenge, isOwner, isConnected, send, refresh } =
     useVoxVaultContract();
-  const { enrolment, hasEnrolment, threshold } = useBiometricCapture();
+  const { enrolment, hasEnrolment, threshold } = useBiometrics();
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -154,11 +155,15 @@ export function ChallengePanel() {
           <p className="challenge-say">
             "{spaced(challenge.challenge.toString())}"
           </p>
-          <p className="hint">
-            {secondsLeft > 0
-              ? `expires in ${formatDuration(secondsLeft)}`
-              : "expired — issue a new one"}
-          </p>
+          <div style={{ display: "grid", placeItems: "center", margin: "14px 0" }}>
+            <CountdownRing
+              remaining={Math.max(0, secondsLeft)}
+              total={300}
+              label={secondsLeft > 0 ? formatDuration(secondsLeft) : "expired"}
+              colour="var(--cyan)"
+              size={84}
+            />
+          </div>
           <button
             onClick={answer}
             disabled={busy || !hasEnrolment || secondsLeft <= 0}

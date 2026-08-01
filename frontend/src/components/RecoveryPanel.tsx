@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { useVoxVaultContract } from "../hooks/useVoxVaultContract";
-import { useBiometricCapture } from "../hooks/useBiometricCapture";
+import { useBiometrics } from "../hooks/BiometricContext";
 import {
   computeGuardianCommitment,
   generateGuardianSalt,
@@ -18,7 +18,7 @@ import {
 export function RecoveryPanel() {
   const { recovery, timelock, isOwner, isConnected, send, refresh } =
     useVoxVaultContract();
-  const { hasEnrolment, verify } = useBiometricCapture();
+  const { hasEnrolment, verify } = useBiometrics();
 
   const [guardianAddress, setGuardianAddress] = useState("");
   const [salt, setSalt] = useState("");
@@ -41,6 +41,18 @@ export function RecoveryPanel() {
       ? Number(recovery.requestTime) + Number(timelock)
       : null;
   const secondsUntilExecutable = executableAt ? executableAt - now : null;
+  const timelockElapsed =
+    secondsUntilExecutable !== null && secondsUntilExecutable <= 0;
+  const elapsedPercent =
+    recovery?.isActive && timelock
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            ((now - Number(recovery.requestTime)) / Number(timelock)) * 100
+          )
+        )
+      : 0;
 
   const run = useCallback(
     async (label: string, fn: () => Promise<unknown>) => {
@@ -162,11 +174,38 @@ export function RecoveryPanel() {
           <p className="verdict-title">Recovery pending</p>
           <p className="hint">
             Proposed owner <code>{recovery.pendingNewOwner}</code>
-            <br />
+          </p>
+
+          <div className="progress">
+            <span style={{ width: `${elapsedPercent}%` }} />
+          </div>
+          <p className="hint" style={{ textAlign: "right", marginTop: 6 }}>
             {secondsUntilExecutable !== null && secondsUntilExecutable > 0
               ? `Executable in ${formatDuration(secondsUntilExecutable)}`
               : "Timelock elapsed — executable now"}
           </p>
+
+          <ol className="timeline">
+            <li className="done">
+              <span className="node">✓</span>
+              <div className="step-title">Recovery requested</div>
+              <div className="step-note">by a registered guardian</div>
+            </li>
+            <li className={timelockElapsed ? "done" : "active"}>
+              <span className="node">{timelockElapsed ? "✓" : ""}</span>
+              <div className="step-title">Timelock</div>
+              <div className="step-note">
+                {timelockElapsed
+                  ? "elapsed"
+                  : "cancellable by the owner until it expires"}
+              </div>
+            </li>
+            <li className={timelockElapsed ? "active" : "pending"}>
+              <span className="node" />
+              <div className="step-title">Executable</div>
+              <div className="step-note">ownership transfers</div>
+            </li>
+          </ol>
           <div className="row">
             <button
               onClick={executeRecovery}
