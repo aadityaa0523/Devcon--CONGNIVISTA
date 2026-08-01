@@ -16,83 +16,64 @@ export default function App() {
     contractAddress !== "0x0000000000000000000000000000000000000000";
 
   return (
-    <main
-      style={{
-        maxWidth: 820,
-        margin: "0 auto",
-        padding: "24px 16px",
-        fontFamily: "system-ui, sans-serif",
-        lineHeight: 1.5,
-      }}
-    >
-      <header style={{ marginBottom: 24 }}>
-        <h1 style={{ marginBottom: 4 }}>VoxVault</h1>
-        <p style={{ color: "#666", marginTop: 0 }}>
-          A smart wallet authorised by your voice. Audio is analysed on this device
-          and never uploaded.
+    <main className="shell">
+      <header className="masthead">
+        <h1 className="wordmark">
+          Prove it's you.
+          <br />
+          <em>Reveal nothing.</em>
+        </h1>
+        <p className="tagline">
+          A smart wallet authorised by your voice. Audio is analysed on this
+          device and never uploaded.
         </p>
-        <ConnectWalletButton />
+        <div className="chipbar">
+          <ConnectWalletButton />
+          {configured && (
+            <a
+              className="chip"
+              href={`https://sepolia.etherscan.io/address/${contractAddress}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span className="dot" />
+              {contractAddress.slice(0, 6)}…{contractAddress.slice(-4)}
+            </a>
+          )}
+          {commitment && commitment !== ZERO_HASH && (
+            <span className="chip">enrolled {commitment.slice(0, 10)}…</span>
+          )}
+          {isConnected && owner && !isOwner && (
+            <span className="chip">not the owner</span>
+          )}
+        </div>
       </header>
 
       {!configured && (
-        <p style={warning}>
+        <p className="notice warn">
           <strong>VITE_CONTRACT_ADDRESS is not set.</strong> Copy{" "}
-          <code>frontend/.env.example</code> to <code>frontend/.env.local</code> and
-          fill in the address from <code>contracts/deployments/sepolia.json</code>.
+          <code>frontend/.env.example</code> to <code>frontend/.env.local</code>{" "}
+          and fill in the address from{" "}
+          <code>contracts/deployments/sepolia.json</code>.
         </p>
       )}
 
-      {configured && (
-        <p style={{ color: "#666", fontSize: "0.9em" }}>
-          Vault{" "}
-          <a
-            href={`https://sepolia.etherscan.io/address/${contractAddress}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <code>{contractAddress}</code>
-          </a>
-          {owner && (
-            <>
-              {" · owner "}
-              <code>{owner.slice(0, 10)}…</code>
-              {isConnected && !isOwner && " (you are not the owner)"}
-            </>
-          )}
-          {commitment && commitment !== ZERO_HASH && (
-            <>
-              {" · enrolled "}
-              <code>{commitment.slice(0, 10)}…</code>
-            </>
-          )}
-        </p>
-      )}
-
-      {error && <p style={warning}>{error}</p>}
+      {error && <p className="notice error">{error}</p>}
 
       <BiometricPanel />
       <ChallengePanel />
       <SessionKeyPanel />
       <RecoveryPanel />
 
-      <footer style={{ color: "#888", fontSize: "0.85em", marginTop: 32 }}>
-        <p>
-          <strong>What the chain does and does not enforce.</strong> The on-chain
-          commitment is a tamper-evident record that an enrolment happened. It is
-          not an access gate: two recordings never hash alike, so no contract
-          function compares hashes for equality. Authorisation is enforced by
-          ordinary ECDSA signatures — owner or session key. Voice matching happens
-          here in the browser and decides what this UI offers to do. Sepolia
-          testnet only.
-        </p>
+      <footer className="footnote">
+        <strong>What the chain does and does not enforce.</strong> The on-chain
+        commitment is a tamper-evident record that an enrolment happened. It is
+        not an access gate: two recordings never hash alike, so no contract
+        function compares hashes for equality. Authorisation is enforced by
+        ordinary ECDSA signatures — owner or session key. Voice matching happens
+        here in the browser and decides what this UI offers to do. Sepolia
+        testnet only.
       </footer>
     </main>
   );
 }
-
-const warning: React.CSSProperties = {
-  background: "#fff8e1",
-  border: "1px solid #ffe082",
-  borderRadius: 6,
-  padding: 12,
-};

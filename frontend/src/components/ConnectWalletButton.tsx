@@ -21,9 +21,9 @@ export function ConnectWalletButton() {
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+    <div className="chip">
       <span>{address?.substring(0, 6)}...{address?.substring(38)}</span>
-      {error && <span style={{ color: "red" }}>Error: {error}</span>}
+      {error && <span className="notice error">{error}</span>}
     </div>
   );
 }

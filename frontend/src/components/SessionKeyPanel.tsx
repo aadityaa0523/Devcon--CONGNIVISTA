@@ -150,19 +150,20 @@ export function SessionKeyPanel() {
   const stored = loadSessionKey();
 
   return (
-    <section style={panel}>
-      <h2>Session keys</h2>
-      <p style={muted}>
+    <section className="panel panel--session">
+      <div className="eyebrow"><span className={isActive ? "dot live" : "dot"} />Session keys</div>
+      <h2>Transact without signing</h2>
+      <p>
         Authorise once with your voice, then transact without further signing until
         the key expires on-chain.
       </p>
 
       {isActive && stored ? (
-        <div style={{ ...box, borderLeft: "4px solid #1565c0" }}>
-          <p style={{ margin: 0, fontWeight: 600 }}>
+        <div className="verdict pass">
+          <p className="verdict-title">
             Active — {formatSessionKeyExpiry(remaining)} remaining
           </p>
-          <p style={muted}>
+          <p className="hint">
             Key <code>{stored.address.slice(0, 10)}…</code>, held in sessionStorage
             and discarded when this tab closes.
           </p>
@@ -183,12 +184,12 @@ export function SessionKeyPanel() {
       )}
 
       {!isOwner && isConnected && (
-        <p style={muted}>Connect as the contract owner to manage session keys.</p>
+        <p className="hint">Connect as the contract owner to manage session keys.</p>
       )}
 
-      <fieldset style={box} disabled={!isActive || busy}>
+      <fieldset disabled={!isActive || busy}>
         <legend>Spend without signing</legend>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="row">
           <input
             placeholder="Recipient address"
             value={recipient}
@@ -203,7 +204,7 @@ export function SessionKeyPanel() {
           />
           <button onClick={spend}>Send</button>
         </div>
-        <p style={muted}>
+        <p className="hint">
           The vault spends its own balance, so fund it first.{" "}
           <button onClick={fundVault} disabled={busy || !isConnected}>
             Fund vault 0.01 ETH
@@ -212,12 +213,12 @@ export function SessionKeyPanel() {
       </fieldset>
 
       {txHashes.length > 0 && (
-        <div style={box}>
-          <p style={{ margin: 0, fontWeight: 600 }}>
+        <div className="verdict">
+          <p className="verdict-title">
             {txHashes.length} transaction{txHashes.length === 1 ? "" : "s"} on one
             authorisation
           </p>
-          <ul style={muted}>
+          <ul className="txlist">
             {txHashes.map((hash) => (
               <li key={hash}>
                 <a
@@ -233,22 +234,9 @@ export function SessionKeyPanel() {
         </div>
       )}
 
-      {status && <p style={muted}>{status}</p>}
-      {error && <p style={{ color: "#c62828" }}>{error}</p>}
+      {status && <p className="hint">{status}</p>}
+      {error && <p className="notice error">{error}</p>}
     </section>
   );
 }
 
-const panel: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 16,
-};
-const box: React.CSSProperties = {
-  border: "1px solid #eee",
-  borderRadius: 6,
-  padding: 12,
-  marginTop: 12,
-};
-const muted: React.CSSProperties = { color: "#666", fontSize: "0.9em" };

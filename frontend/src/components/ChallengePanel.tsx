@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useVoxVaultContract } from "../hooks/useVoxVaultContract";
 import { useBiometricCapture } from "../hooks/useBiometricCapture";
-import {
-  captureVoiceWithChallenge,
-  VoiceCaptureError,
-} from "../lib/biometrics";
+import { captureVoiceWithChallenge, VoiceCaptureError } from "../lib/biometrics";
 import { compareFeatures, type ComparisonResult } from "../lib/quantization";
 import { commitmentFromFeaturesAndChallenge } from "../lib/hashing";
 import { isSpeechRecognitionSupported } from "../lib/speech";
@@ -22,9 +19,9 @@ interface Outcome {
 /**
  * Liveness challenge — the anti-replay feature.
  *
- * The contract issues a four-digit number that the owner must speak aloud with
- * their passphrase. A recording made before the number was issued cannot contain
- * it, so a captured sample cannot answer a fresh challenge.
+ * The contract issues a four-digit number the owner must speak aloud with their
+ * passphrase. A recording made before the number was issued cannot contain it,
+ * so a captured sample cannot answer a fresh challenge.
  */
 export function ChallengePanel() {
   const { challenge, isOwner, isConnected, send, refresh } =
@@ -123,39 +120,41 @@ export function ChallengePanel() {
     outcome?.voiceMatched === true && outcome?.challengeMatched === true;
 
   return (
-    <section style={panel}>
-      <h2>Liveness challenge</h2>
-      <p style={muted}>
+    <section className="panel panel--challenge">
+      <div className="eyebrow">
+        <span className={busy ? "dot live" : "dot"} />
+        Liveness challenge
+      </div>
+      <h2>Speak the number</h2>
+      <p>
         The contract issues a number you must say out loud. A recording captured
         before the number existed cannot contain it, so a replayed sample fails.
         The number is also mixed into the commitment, making each answer unique.
       </p>
 
       {!speechSupported && (
-        <p style={warn}>
+        <p className="notice warn">
           This browser has no Web Speech API, so the spoken number cannot be
           checked. Use Chrome or Edge for this feature.
         </p>
       )}
 
-      {!hasEnrolment && <p style={warn}>Enrol a voice sample first.</p>}
+      {!hasEnrolment && (
+        <p className="notice warn">Enrol a voice sample first.</p>
+      )}
 
       {active && challenge ? (
-        <div style={{ ...box, textAlign: "center" }}>
-          <p style={{ ...muted, margin: 0 }}>Say your passphrase, then:</p>
-          <p
-            style={{
-              fontSize: "2.6rem",
-              fontWeight: 700,
-              letterSpacing: "0.35em",
-              margin: "8px 0",
-              fontFamily: "ui-monospace, monospace",
-            }}
-          >
-            {challenge.challenge.toString()}
+        <div className="challenge-stage">
+          <p className="hint" style={{ margin: 0 }}>
+            Say your passphrase, then:
           </p>
-          <p style={muted}>
-            "{spaced(challenge.challenge.toString())}" ·{" "}
+          <div className="challenge-digits">
+            {challenge.challenge.toString()}
+          </div>
+          <p className="challenge-say">
+            "{spaced(challenge.challenge.toString())}"
+          </p>
+          <p className="hint">
             {secondsLeft > 0
               ? `expires in ${formatDuration(secondsLeft)}`
               : "expired — issue a new one"}
@@ -174,16 +173,11 @@ export function ChallengePanel() {
       )}
 
       {outcome && (
-        <div
-          style={{
-            ...box,
-            borderLeft: `4px solid ${bothPassed ? "#2e7d32" : "#c62828"}`,
-          }}
-        >
-          <p style={{ margin: 0, fontWeight: 600 }}>
+        <div className={`verdict ${bothPassed ? "pass" : "fail"}`}>
+          <p className="verdict-title">
             {bothPassed ? "Live speaker verified" : "Challenge failed"}
           </p>
-          <ul style={{ ...muted, listStyle: "none", padding: 0 }}>
+          <ul className="checklist">
             <li>
               {outcome.voiceMatched ? "✓" : "✗"} Voice matches enrolment —{" "}
               {(outcome.comparison.normalisedHamming * 100).toFixed(1)}% of bits
@@ -196,11 +190,11 @@ export function ChallengePanel() {
             </li>
           </ul>
           {outcome.transcript && (
-            <p style={muted}>
+            <p className="hint" style={{ marginTop: 10 }}>
               Heard: <em>"{outcome.transcript}"</em>
             </p>
           )}
-          <p style={muted}>
+          <p className="hint" style={{ margin: 0 }}>
             Commitment <code>{outcome.commitment.slice(0, 18)}…</code> — bound to
             challenge {outcome.challenge}, so the same audio answering a different
             challenge produces an entirely different hash.
@@ -208,12 +202,12 @@ export function ChallengePanel() {
         </div>
       )}
 
-      {status && <p style={muted}>{status}</p>}
-      {error && <p style={{ color: "#c62828" }}>{error}</p>}
+      {status && <p className="hint">{status}</p>}
+      {error && <p className="notice error">{error}</p>}
 
-      <details style={{ marginTop: 12 }}>
-        <summary style={muted}>What this does and does not prove</summary>
-        <p style={muted}>
+      <details>
+        <summary>What this does and does not prove</summary>
+        <p className="hint">
           The contract enforces that a challenge is <strong>single-use</strong>{" "}
           and expires after five minutes — answer it twice and the second call
           reverts. It cannot verify that you said the number or that the voice was
@@ -236,24 +230,3 @@ function formatDuration(seconds: number): string {
   const s = seconds % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
-
-const panel: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 16,
-};
-const box: React.CSSProperties = {
-  border: "1px solid #eee",
-  borderRadius: 6,
-  padding: 12,
-  marginTop: 12,
-};
-const muted: React.CSSProperties = { color: "#666", fontSize: "0.9em" };
-const warn: React.CSSProperties = {
-  background: "#fff8e1",
-  border: "1px solid #ffe082",
-  borderRadius: 6,
-  padding: 8,
-  fontSize: "0.9em",
-};

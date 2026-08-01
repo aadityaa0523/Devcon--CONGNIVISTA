@@ -105,12 +105,13 @@ export function RecoveryPanel() {
     });
 
   return (
-    <section style={panel}>
-      <h2>Social recovery</h2>
+    <section className="panel panel--recovery">
+      <div className="eyebrow"><span className={recovery?.isActive ? "dot live" : "dot"} />Social recovery</div>
+      <h2>Guardians and timelock</h2>
 
-      <fieldset style={box} disabled={busy || !isConnected || !isOwner}>
+      <fieldset disabled={busy || !isConnected || !isOwner}>
         <legend>Register a guardian</legend>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="row">
           <input
             placeholder="Guardian address"
             value={guardianAddress}
@@ -120,22 +121,22 @@ export function RecoveryPanel() {
           <button onClick={addGuardian}>Add guardian</button>
         </div>
         {salt && (
-          <p style={muted}>
+          <p className="hint">
             Salt — send this to the guardian privately, they cannot prove
             guardianship without it:
             <br />
             <code style={{ wordBreak: "break-all" }}>{salt}</code>
           </p>
         )}
-        <p style={muted}>
+        <p className="hint">
           Only keccak256(address, salt) is stored. The address itself never appears
           in calldata or storage.
         </p>
       </fieldset>
 
-      <fieldset style={box} disabled={busy || !isConnected}>
+      <fieldset disabled={busy || !isConnected}>
         <legend>Guardian: open a recovery</legend>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="row">
           <input
             placeholder="Proposed new owner address"
             value={proposedOwner}
@@ -150,23 +151,23 @@ export function RecoveryPanel() {
           />
           <button onClick={requestRecovery}>Request recovery</button>
         </div>
-        <p style={muted}>
+        <p className="hint">
           Run this from the guardian's own wallet — the contract hashes msg.sender
           with the salt to check membership.
         </p>
       </fieldset>
 
       {recovery?.isActive ? (
-        <div style={{ ...box, borderLeft: "4px solid #ef6c00" }}>
-          <p style={{ margin: 0, fontWeight: 600 }}>Recovery pending</p>
-          <p style={muted}>
+        <div className="verdict">
+          <p className="verdict-title">Recovery pending</p>
+          <p className="hint">
             Proposed owner <code>{recovery.pendingNewOwner}</code>
             <br />
             {secondsUntilExecutable !== null && secondsUntilExecutable > 0
               ? `Executable in ${formatDuration(secondsUntilExecutable)}`
               : "Timelock elapsed — executable now"}
           </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="row">
             <button
               onClick={executeRecovery}
               disabled={
@@ -183,15 +184,15 @@ export function RecoveryPanel() {
           </div>
         </div>
       ) : (
-        <p style={muted}>
+        <p className="hint">
           No recovery pending.{" "}
           {timelock !== null &&
             `Timelock on this deployment: ${formatDuration(Number(timelock))}.`}
         </p>
       )}
 
-      {status && <p style={muted}>{status}</p>}
-      {error && <p style={{ color: "#c62828" }}>{error}</p>}
+      {status && <p className="hint">{status}</p>}
+      {error && <p className="notice error">{error}</p>}
     </section>
   );
 }
@@ -206,16 +207,3 @@ function formatDuration(seconds: number): string {
   return `${s}s`;
 }
 
-const panel: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 16,
-};
-const box: React.CSSProperties = {
-  border: "1px solid #eee",
-  borderRadius: 6,
-  padding: 12,
-  marginTop: 12,
-};
-const muted: React.CSSProperties = { color: "#666", fontSize: "0.9em" };
