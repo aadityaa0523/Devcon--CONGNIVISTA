@@ -112,7 +112,7 @@ Requires Node 20+ and a browser with MetaMask.
 ```bash
 npm install
 npm run compile -w contracts   # also copies the ABI into the frontend
-npm run test -w contracts      # 29 tests
+npm run test -w contracts      # 37 tests
 ```
 
 Deploy to Sepolia — put credentials in `contracts/.env` first (see
@@ -178,7 +178,7 @@ Compression: 48 float32 dims = 192 bytes → 48 bytes at INT8 → **6 bytes bina
 ```
 contracts/
   contracts/VoxVault.sol      ownership, commitment, session keys, recovery
-  test/VoxVault.test.ts       29 tests
+  test/VoxVault.test.ts       37 tests
   scripts/deploy.ts           two-instance deploy + Etherscan verification
 frontend/src/
   lib/biometrics.ts           capture, FFT, feature extraction
@@ -193,10 +193,11 @@ frontend/src/
 
 ## Testing
 
-`npm run test -w contracts` covers session key expiry and revocation, recovery
+`npm run test -w contracts` — 37 tests covering session key expiry and revocation, recovery
 timelock boundaries either side of the deadline via time travel, guardian salt
-verification (right salt, wrong salt, non-guardian), and the `cancelRecovery`
-regression described above.
+verification (right salt, wrong salt, non-guardian), the liveness challenge
+(single-use consumption, stale challenge values, expiry, and logging of failed
+attempts), and the `cancelRecovery` regression described above.
 
 There are no frontend tests. Given the time budget, contract correctness was
 worth more than component coverage — the contract is what holds funds.
