@@ -24,7 +24,10 @@ frontend/build
 contracts/artifacts/
 contracts/cache/
 contracts/typechain-types/
-contracts/deployments/
+# deployments/ is deliberately tracked — the submission has to record the
+# deployed address, and it contains no secrets.
+contracts/deployments/hardhat.json
+contracts/deployments/localhost.json
 
 # Logs
 logs
@@ -41,3 +44,6 @@ lerna-debug.log*
 *.swo
 *~
 node_modules
+
+# Agent instructions, superseded by README as the source of truth
+CLAUDE.md

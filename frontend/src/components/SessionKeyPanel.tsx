@@ -1,139 +1,254 @@
-import React, { useState, useEffect } from "react";
-import { useVoxVaultContract } from "../hooks/useVoxVaultContract";
-import * as sessionKeyLib from "../lib/sessionKey";
+import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
+import { useVoxVaultContract } from "../hooks/useVoxVaultContract";
+import { useBiometricCapture } from "../hooks/useBiometricCapture";
+import {
+  clearSessionKey,
+  formatSessionKeyExpiry,
+  generateSessionKey,
+  getSessionKeyRemainingTime,
+  getSessionKeySigner,
+  loadSessionKey,
+  saveSessionKey,
+} from "../lib/sessionKey";
+import { getVoxVaultContract } from "../lib/contract";
 
+/** Gas float sent to the session key so it can pay for its own transactions. */
+const SESSION_KEY_GAS_FUNDING = "0.003";
+
+/**
+ * One authorisation, then transactions without further signing prompts.
+ *
+ * The session key is a plain EOA generated in this tab. It holds no value beyond
+ * a small gas float and expires on-chain, so compromising it costs at most
+ * whatever the vault holds until expiry — which is why this is testnet-only.
+ */
 export function SessionKeyPanel() {
-  const { registerSessionKey, isLoading, error, isOwner } = useVoxVaultContract();
-  const [sessionKeyStats, setSessionKeyStats] = useState<any>(null);
-  const [isEnabling, setIsEnabling] = useState(false);
-  const [sessionError, setSessionError] = useState<string | null>(null);
-  const [refreshInterval, setRefreshInterval] = useState<number | null>(null);
+  const { contract, contractAddress, isOwner, isConnected, send, refresh } =
+    useVoxVaultContract();
+  const { hasEnrolment, verify } = useBiometricCapture();
 
-  // Refresh session key status every second
+  const [remaining, setRemaining] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [recipient, setRecipient] = useState("");
+  const [amount, setAmount] = useState("0.001");
+  const [txHashes, setTxHashes] = useState<string[]>([]);
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      const stats = sessionKeyLib.getSessionKeyStats();
-      setSessionKeyStats(stats);
+    const tick = () => setRemaining(getSessionKeyRemainingTime());
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
-      if (!stats.isValid && refreshInterval !== null) {
-        clearInterval(refreshInterval);
-        setRefreshInterval(null);
-      }
-    }, 1000);
+  const isActive = remaining > 0;
 
-    setRefreshInterval(interval as any);
-
-    return () => clearInterval(interval);
-  }, [refreshInterval]);
-
-  const handleEnableSessionMode = async () => {
-    if (!isOwner) {
-      setSessionError("Only wallet owner can enable session mode");
-      return;
-    }
-
-    setIsEnabling(true);
-    setSessionError(null);
-
+  const enable = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setStatus(null);
     try {
-      // Generate new session key
-      const { wallet, address } = sessionKeyLib.generateSessionKey();
-
-      // Register on-chain (will expire in 30 min from block.timestamp)
-      const tx = await registerSessionKey(address);
-      if (tx) {
-        // Compute expiry: current time + 30 minutes
-        const expiryTime = Math.floor(Date.now() / 1000) + 30 * 60;
-
-        // Save session key locally
-        sessionKeyLib.saveSessionKey(wallet.privateKey, expiryTime);
-
-        // Refresh status
-        const stats = sessionKeyLib.getSessionKeyStats();
-        setSessionKeyStats(stats);
-
-        console.log("Session key enabled:", {
-          address,
-          expiryTime,
-          txHash: tx.hash,
-        });
+      if (hasEnrolment) {
+        setStatus("Verify your voice to authorise the session…");
+        const outcome = await verify();
+        if (!outcome) {
+          setBusy(false);
+          return;
+        }
+        if (!outcome.passed) {
+          setError(
+            `Voice did not match (${(outcome.comparison.normalisedHamming * 100).toFixed(1)}% of bits differ). Session not authorised.`
+          );
+          setBusy(false);
+          return;
+        }
       }
-    } catch (err) {
-      setSessionError(err instanceof Error ? err.message : "Failed to enable session mode");
-      console.error("Session key error:", err);
-    } finally {
-      setIsEnabling(false);
-    }
-  };
 
-  const handleRevokeSessionKey = () => {
-    sessionKeyLib.clearSessionKey();
-    setSessionKeyStats(sessionKeyLib.getSessionKeyStats());
-  };
+      const { wallet, address } = generateSessionKey();
+
+      setStatus("Registering the session key on-chain…");
+      await send((c) => c.registerSessionKey(address));
+
+      // A brand-new EOA has no ether and cannot pay gas, so front it a float.
+      setStatus("Funding the session key for gas…");
+      const provider = new ethers.BrowserProvider(window.ethereum!);
+      const signer = await provider.getSigner();
+      const fundTx = await signer.sendTransaction({
+        to: address,
+        value: ethers.parseEther(SESSION_KEY_GAS_FUNDING),
+      });
+      await fundTx.wait();
+
+      const duration = await contract!.sessionKeyDuration();
+      saveSessionKey(
+        wallet.privateKey,
+        Math.floor(Date.now() / 1000) + Number(duration)
+      );
+      setRemaining(getSessionKeyRemainingTime());
+      setStatus("Session active — transactions below need no further signing.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  }, [contract, hasEnrolment, send, verify]);
+
+  const spend = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setStatus(null);
+    try {
+      if (!ethers.isAddress(recipient)) {
+        throw new Error("Enter a valid recipient address");
+      }
+      const provider = new ethers.BrowserProvider(window.ethereum!);
+      const keySigner = getSessionKeySigner(provider);
+      if (!keySigner) {
+        throw new Error("No active session key — enable session mode first.");
+      }
+
+      // Signed by the session key, so MetaMask never prompts.
+      const vault = getVoxVaultContract(contractAddress, keySigner);
+      const tx = await vault.execute(
+        recipient,
+        ethers.parseEther(amount),
+        "0x"
+      );
+      const receipt = await tx.wait();
+      setTxHashes((prev) => [tx.hash, ...prev]);
+      setStatus(`Sent in block ${receipt?.blockNumber} with no signing prompt.`);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [amount, contractAddress, recipient, refresh]);
+
+  const fundVault = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum!);
+      const signer = await provider.getSigner();
+      const tx = await signer.sendTransaction({
+        to: contractAddress,
+        value: ethers.parseEther("0.01"),
+      });
+      await tx.wait();
+      setStatus("Vault funded with 0.01 ETH.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [contractAddress]);
+
+  const stored = loadSessionKey();
 
   return (
-    <div style={{ padding: "20px", border: "1px solid #ccc", borderRadius: "8px", marginTop: "20px" }}>
-      <h2>Session Keys</h2>
-
-      <p>
-        Enable signature-free mode for 30 minutes. After verification, you can execute multiple
-        transactions without re-signing.
+    <section style={panel}>
+      <h2>Session keys</h2>
+      <p style={muted}>
+        Authorise once with your voice, then transact without further signing until
+        the key expires on-chain.
       </p>
 
-      {!isOwner && <p style={{ color: "orange" }}>Note: Only owner can enable session keys</p>}
-
-      {sessionKeyStats && sessionKeyStats.isValid ? (
-        <div style={{
-          padding: "15px",
-          backgroundColor: "#e3f2fd",
-          borderRadius: "8px",
-          marginBottom: "15px",
-        }}>
-          <p><strong style={{ color: "#1976d2" }}>✓ Session Mode Active</strong></p>
-          <ul>
-            <li>Address: <code>{sessionKeyStats.address?.substring(0, 10)}...</code></li>
-            <li>Time Remaining: <strong>{sessionKeyLib.formatSessionKeyExpiry(sessionKeyStats.remainingSeconds)}</strong></li>
-            <li>Created: {sessionKeyStats.createdAtTime}</li>
-          </ul>
-          <p style={{ fontSize: "0.9em", color: "#666" }}>
-            Your session key is stored in browser sessionStorage. It will be cleared when you close
-            this tab.
+      {isActive && stored ? (
+        <div style={{ ...box, borderLeft: "4px solid #1565c0" }}>
+          <p style={{ margin: 0, fontWeight: 600 }}>
+            Active — {formatSessionKeyExpiry(remaining)} remaining
           </p>
-          <button onClick={handleRevokeSessionKey} style={{ marginTop: "10px", backgroundColor: "#ff9800" }}>
-            Revoke Session Key
+          <p style={muted}>
+            Key <code>{stored.address.slice(0, 10)}…</code>, held in sessionStorage
+            and discarded when this tab closes.
+          </p>
+          <button
+            onClick={() => {
+              clearSessionKey();
+              setRemaining(0);
+            }}
+            disabled={busy}
+          >
+            End session
           </button>
         </div>
       ) : (
-        <button
-          onClick={handleEnableSessionMode}
-          disabled={isEnabling || isLoading || !isOwner}
-          style={{ marginBottom: "15px", padding: "10px 20px", fontSize: "1em" }}
-        >
-          {isEnabling ? "Enabling..." : "Enable Signature-Free Mode"}
+        <button onClick={enable} disabled={busy || !isConnected || !isOwner}>
+          {busy ? "Working…" : "Authorise with voice, enable 30-minute session"}
         </button>
       )}
 
-      {(error || sessionError) && (
-        <div style={{ marginTop: "20px", padding: "10px", backgroundColor: "#ffebee", color: "#c62828" }}>
-          <p>Error: {sessionError || error}</p>
+      {!isOwner && isConnected && (
+        <p style={muted}>Connect as the contract owner to manage session keys.</p>
+      )}
+
+      <fieldset style={box} disabled={!isActive || busy}>
+        <legend>Spend without signing</legend>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input
+            placeholder="Recipient address"
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            style={{ flex: "2 1 320px" }}
+          />
+          <input
+            placeholder="ETH"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            style={{ flex: "1 1 80px" }}
+          />
+          <button onClick={spend}>Send</button>
+        </div>
+        <p style={muted}>
+          The vault spends its own balance, so fund it first.{" "}
+          <button onClick={fundVault} disabled={busy || !isConnected}>
+            Fund vault 0.01 ETH
+          </button>
+        </p>
+      </fieldset>
+
+      {txHashes.length > 0 && (
+        <div style={box}>
+          <p style={{ margin: 0, fontWeight: 600 }}>
+            {txHashes.length} transaction{txHashes.length === 1 ? "" : "s"} on one
+            authorisation
+          </p>
+          <ul style={muted}>
+            {txHashes.map((hash) => (
+              <li key={hash}>
+                <a
+                  href={`https://sepolia.etherscan.io/tx/${hash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {hash.slice(0, 18)}…
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
-      <details style={{ marginTop: "20px" }}>
-        <summary>How it works</summary>
-        <ol>
-          <li>Click "Enable Signature-Free Mode"</li>
-          <li>A temporary keypair (session key) is generated in your browser</li>
-          <li>The session key is registered on-chain with a 30-minute expiry</li>
-          <li>For the next 30 minutes, you can execute transactions without signing</li>
-          <li>After 30 minutes, the session key expires and you must re-verify</li>
-        </ol>
-        <p style={{ fontSize: "0.9em", color: "#666" }}>
-          <strong>Security Note:</strong> Session keys are ephemeral and stored in sessionStorage
-          (cleared on tab close). This is acceptable for testnet only.
-        </p>
-      </details>
-    </div>
+      {status && <p style={muted}>{status}</p>}
+      {error && <p style={{ color: "#c62828" }}>{error}</p>}
+    </section>
   );
 }
+
+const panel: React.CSSProperties = {
+  border: "1px solid #ddd",
+  borderRadius: 8,
+  padding: 16,
+  marginBottom: 16,
+};
+const box: React.CSSProperties = {
+  border: "1px solid #eee",
+  borderRadius: 6,
+  padding: 12,
+  marginTop: 12,
+};
+const muted: React.CSSProperties = { color: "#666", fontSize: "0.9em" };

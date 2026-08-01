@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { ethers } from "ethers";
+
 import * as walletLib from "../lib/wallet";
 import type { WalletState } from "../types";
 

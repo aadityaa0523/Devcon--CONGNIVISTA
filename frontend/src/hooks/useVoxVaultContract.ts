@@ -1,120 +1,119 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ethers } from "ethers";
-import * as contractLib from "../lib/contract";
+import {
+  getVoxVaultContract,
+  getOwner,
+  getBiometricCommitment,
+  getRecoveryStatus,
+  getRecoveryTimelock,
+  type RecoveryStatus,
+} from "../lib/contract";
 import { useWallet } from "./useWallet";
-import type { ContractState } from "../types";
+
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS as string;
 
 export function useVoxVaultContract() {
-  const { address, isConnected } = useWallet();
-  const [state, setState] = useState<ContractState>({
-    isLoading: false,
-    owner: null,
-    biometricCommitmentHash: null,
-    error: null,
-  });
+  const { address, isConnected, isSepoliaNetwork } = useWallet();
 
-  // Contract address from env
-  const contractAddress = import.meta.env.VITE_CONTRACT_ADDRESS as string;
+  const [contract, setContract] = useState<ethers.Contract | null>(null);
+  const [owner, setOwner] = useState<string | null>(null);
+  const [commitment, setCommitment] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState<RecoveryStatus | null>(null);
+  const [timelock, setTimelock] = useState<bigint | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Get provider from window
-  const provider = useMemo(() => {
-    if (!window.ethereum) return null;
-    return new ethers.BrowserProvider(window.ethereum);
-  }, []);
+  // Build the contract instance whenever the connected account changes. Doing
+  // this in an effect rather than useMemo because getting a signer is async.
+  useEffect(() => {
+    let cancelled = false;
 
-  // Get signer
-  const signer = useMemo(async () => {
-    if (!provider) return null;
-    try {
-      return await provider.getSigner();
-    } catch {
-      return null;
+    async function build() {
+      if (!isConnected || !window.ethereum) {
+        setContract(null);
+        return;
+      }
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        if (cancelled) return;
+        setContract(getVoxVaultContract(CONTRACT_ADDRESS, signer));
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setContract(null);
+        setError(err instanceof Error ? err.message : String(err));
+      }
     }
-  }, [provider]);
 
-  // Contract instance
-  const contract = useMemo(() => {
-    if (!contractAddress || !signer) return null;
-    try {
-      return contractLib.getVoxVaultContract(contractAddress, signer as any);
-    } catch (err) {
-      console.error("Failed to instantiate contract:", err);
-      return null;
-    }
-  }, [contractAddress, signer]);
+    void build();
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, address]);
 
-  // Fetch owner and biometric commitment hash
-  const refreshContractState = useCallback(async () => {
+  const refresh = useCallback(async () => {
     if (!contract) return;
-
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    setIsLoading(true);
+    setError(null);
     try {
-      const owner = await contractLib.getOwner(contract);
-      const commitmentHash = await contractLib.getBiometricCommitmentHash(contract);
-
-      setState({
-        isLoading: false,
-        owner,
-        biometricCommitmentHash: commitmentHash,
-        error: null,
-      });
+      const [nextOwner, nextCommitment, nextRecovery, nextTimelock] =
+        await Promise.all([
+          getOwner(contract),
+          getBiometricCommitment(contract),
+          getRecoveryStatus(contract),
+          getRecoveryTimelock(contract),
+        ]);
+      setOwner(nextOwner);
+      setCommitment(nextCommitment);
+      setRecovery(nextRecovery);
+      setTimelock(nextTimelock);
     } catch (err) {
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: err instanceof Error ? err.message : "Failed to fetch contract state",
-      }));
+      setError(
+        `Could not read the contract — is VITE_CONTRACT_ADDRESS pointing at a deployed VoxVault on this network? (${
+          err instanceof Error ? err.message : String(err)
+        })`
+      );
+    } finally {
+      setIsLoading(false);
     }
   }, [contract]);
 
-  // Refresh on component mount and when contract changes
   useEffect(() => {
-    refreshContractState();
-  }, [refreshContractState]);
+    void refresh();
+  }, [refresh]);
 
-  // Wrapper functions
-  const registerBiometric = useCallback(
-    async (commitmentHash: string) => {
-      if (!contract) throw new Error("Contract not available");
-      return contractLib.registerBiometric(contract, commitmentHash);
+  /** Wrap a write call so transactions are awaited and errors surface as text. */
+  const send = useCallback(
+    async (
+      run: (c: ethers.Contract) => Promise<ethers.ContractTransactionResponse>
+    ): Promise<ethers.ContractTransactionReceipt | null> => {
+      if (!contract) throw new Error("Wallet not connected");
+      setError(null);
+      const tx = await run(contract);
+      const receipt = await tx.wait();
+      await refresh();
+      return receipt;
     },
-    [contract]
+    [contract, refresh]
   );
 
-  const reVerifyBiometric = useCallback(
-    async (commitmentHash: string) => {
-      if (!contract) throw new Error("Contract not available");
-      return contractLib.reVerifyBiometric(contract, commitmentHash);
-    },
-    [contract]
-  );
-
-  const registerSessionKey = useCallback(
-    async (sessionKeyAddress: string) => {
-      if (!contract) throw new Error("Contract not available");
-      return contractLib.registerSessionKey(contract, sessionKeyAddress);
-    },
-    [contract]
-  );
-
-  const executeTransaction = useCallback(
-    async (to: string, value: bigint, data: string) => {
-      if (!contract) throw new Error("Contract not available");
-      return contractLib.executeTransaction(contract, to, value, data);
-    },
-    [contract]
-  );
+  const isOwner =
+    !!address && !!owner && address.toLowerCase() === owner.toLowerCase();
 
   return {
-    ...state,
     contract,
-    contractAddress,
+    contractAddress: CONTRACT_ADDRESS,
+    owner,
+    commitment,
+    recovery,
+    timelock,
+    isOwner,
     isConnected,
-    isOwner: address?.toLowerCase() === state.owner?.toLowerCase(),
-    refreshContractState,
-    registerBiometric,
-    reVerifyBiometric,
-    registerSessionKey,
-    executeTransaction,
+    isSepoliaNetwork,
+    isLoading,
+    error,
+    refresh,
+    send,
   };
 }

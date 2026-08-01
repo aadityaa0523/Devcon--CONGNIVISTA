@@ -7,7 +7,6 @@ import { ethers } from "ethers";
  */
 
 const SESSION_KEY_STORAGE_KEY = "voxvault_session_key";
-const SESSION_EXPIRY_STORAGE_KEY = "voxvault_session_expiry";
 
 export interface SessionKeyData {
   address: string;
@@ -19,7 +18,7 @@ export interface SessionKeyData {
 /**
  * Generate a new random session key
  */
-export function generateSessionKey(): { wallet: ethers.Wallet; address: string } {
+export function generateSessionKey(): { wallet: ethers.HDNodeWallet; address: string } {
   const wallet = ethers.Wallet.createRandom();
   return {
     wallet,

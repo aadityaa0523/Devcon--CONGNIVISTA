@@ -89,21 +89,13 @@ export async function switchToSepolia(): Promise<void> {
 }
 
 export function listenForAccountChanges(callback: (accounts: string[]) => void): void {
-  if (!window.ethereum) {
-    console.error("MetaMask not installed");
-    return;
-  }
-
-  window.ethereum.on("accountsChanged", callback);
+  // `on` is part of EIP-1193 but optional in ethers' Eip1193Provider type, and
+  // genuinely absent in some injected wallets — so it is checked, not asserted.
+  window.ethereum?.on?.("accountsChanged", callback as (...args: never[]) => void);
 }
 
 export function listenForChainChanges(callback: (chainId: string) => void): void {
-  if (!window.ethereum) {
-    console.error("MetaMask not installed");
-    return;
-  }
-
-  window.ethereum.on("chainChanged", callback);
+  window.ethereum?.on?.("chainChanged", callback as (...args: never[]) => void);
 }
 
 export async function getCurrentAccount(): Promise<string | null> {

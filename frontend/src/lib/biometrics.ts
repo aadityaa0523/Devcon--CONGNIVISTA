@@ -32,7 +32,6 @@ export const VAD_THRESHOLD = 0.12;
 /** Dimensionality of the emitted feature vector. */
 export const FEATURE_DIMS = 48;
 
-const BASE_FEATURE_COUNT = 3; // rms, zcr, spectral centroid
 const STATS_PER_SERIES = 8;
 
 // ============ Public types ============
