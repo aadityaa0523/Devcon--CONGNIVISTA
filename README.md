@@ -56,11 +56,11 @@ Nothing about the voice itself ever leaves your device. What reaches Sepolia is 
 
 ## Live Demo
 
-**[aegisvox.vercel.app](https://aegisvox.vercel.app/)**
+### **[aegisvox.vercel.app](https://aegisvox.vercel.app/)**
 
-The frontend is deployed and connected to the `main` Sepolia instance — you'll need MetaMask, a microphone, and a Sepolia testnet balance to try enrolment, verification, and the liveness challenge yourself.
+The frontend is deployed and connected to the `main` Sepolia instance — no setup, no cloning, no local build. Open it, connect MetaMask, and try enrolment, verification, and the liveness challenge directly.
 
-> ⚠️ Microphone access requires a secure context, which Vercel's HTTPS deployment satisfies out of the box.
+> ⚠️ You'll need a browser with MetaMask, a microphone, and a small Sepolia testnet balance.
 
 ---
 
@@ -169,9 +169,8 @@ Dimensions live on very different scales — RMS is ~0–1, spectral centroid ru
 
 ## Architecture
 
-<p align="center">
-  <img width="491" height="487" alt="AegisVox design-reasoning graph" src="https://github.com/user-attachments/assets/5aa63d3f-830b-410d-8242-c8f225428e49" />
-</p>
+<img width="491" height="487" alt="Screenshot 2026-08-01 222755" src="https://github.com/user-attachments/assets/3d0cbcbc-990f-4467-ad55-fcfb6bb95759" />
+
 
 <p align="center"><em>The full system, mapped as a knowledge graph — every module, decision, and trade-off, linked back to what it connects to.</em></p>
 ```mermaid
