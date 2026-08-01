@@ -11,9 +11,10 @@ import {
   type ChallengeState,
 } from "../lib/contract";
 import { describeTxError } from "../lib/errors";
+import { resolveContractAddress } from "../config/deployments";
 import { useWallet } from "./useWallet";
 
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS as string;
+const CONTRACT_ADDRESS = resolveContractAddress();
 
 export function useVoxVaultContract() {
   const { address, isConnected, isSepoliaNetwork } = useWallet();
