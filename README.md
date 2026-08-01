@@ -155,9 +155,8 @@ Dimensions live on very different scales — RMS is ~0–1, spectral centroid ru
 
 ## Architecture
 
-<p align="center">
-  <img src="assets/vault-graph.png" alt="AegisVox Obsidian design-reasoning graph, mapping every architectural decision to the trade-off behind it" width="760">
-</p>
+<img width="491" height="487" alt="Screenshot 2026-08-01 222755" src="https://github.com/user-attachments/assets/5aa63d3f-830b-410d-8242-c8f225428e49" />
+
 
 <p align="center"><em>The full system, mapped as a knowledge graph — every module, decision, and trade-off, linked back to what it connects to.</em></p>
 
