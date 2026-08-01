@@ -13,10 +13,14 @@ Built for the Ethereum Build Sprint, NIT Trichy. **Sepolia testnet only.**
    feature vector from the audio, hashes it, and publishes only the hash.
 2. **Verify.** You say it again. The new vector is compared against the stored one
    *in the browser*. A pass unlocks actions in the UI.
-3. **Session keys.** One passing verification registers a throwaway keypair
+3. **Liveness challenge.** The contract issues a four-digit number. You must say
+   it aloud along with your passphrase; the browser transcribes it and mixes it
+   into the commitment. A recording made before the number existed cannot contain
+   it, so a replayed sample fails.
+4. **Session keys.** One passing verification registers a throwaway keypair
    on-chain with an expiry. Until it expires you can transact with no signing
    prompts at all.
-4. **Social recovery.** Guardians are stored as `keccak256(address, salt)`, so
+5. **Social recovery.** Guardians are stored as `keccak256(address, salt)`, so
    adding one does not publish their address. A guardian can open a recovery; a
    timelock delays it; the owner can cancel in the meantime.
 
@@ -52,6 +56,23 @@ rejected: it publishes a replayable biometric template, which defeats the point.
 Storing `keccak256(address, salt)` keeps guardian addresses out of calldata and
 storage. But the instant a guardian calls `requestRecovery`, their `msg.sender` is
 on-chain forever. Real sender anonymity needs a relayer, which is out of scope.
+
+### The liveness challenge is half enforced on-chain, half not
+
+The contract genuinely enforces that a challenge is **single-use** and **expires
+after five minutes** — answering twice reverts, and there are tests for both.
+That is a real replay defence.
+
+What it cannot enforce is that you *said* the number, or that the voice was
+yours. There is no audio on-chain. Both checks happen in the browser and arrive
+at the contract as claims recorded in the event log. So the challenge defeats a
+**stale recording**; it does not defeat someone who can make you speak on demand,
+and the randomness is `prevrandao`-derived, which a proposer can bias.
+
+Also worth stating plainly: Chrome's `SpeechRecognition` **uploads audio to
+Google** to transcribe. Only the challenge digits matter for that check, but it
+is a genuine departure from "nothing leaves the device" and applies to this
+feature alone — the feature extraction and matching remain entirely local.
 
 ### Voice matching quality is unproven, and the UI shows you why
 

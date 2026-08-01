@@ -47,3 +47,26 @@ export function commitmentFromFeatures(features: Float32Array): string {
 export function binaryCommitmentFromFeatures(features: Float32Array): string {
   return sha256Commitment(quantizeToBinary(features));
 }
+
+/**
+ * Commitment binding the voice to a specific liveness challenge.
+ *
+ * Hashing the quantised vector together with the challenge means the value
+ * published on-chain is unique to that challenge. Two answers to two different
+ * challenges produce unrelated commitments even from identical audio, so an
+ * observer cannot tell that the same recording was submitted twice — and a
+ * commitment captured from one round is meaningless in the next.
+ */
+export function commitmentFromFeaturesAndChallenge(
+  features: Float32Array,
+  challenge: number | string
+): string {
+  const quantised = quantizeToInt8(features);
+  const challengeBytes = ethers.toUtf8Bytes(String(challenge));
+
+  const combined = new Uint8Array(quantised.length + challengeBytes.length);
+  combined.set(quantised, 0);
+  combined.set(challengeBytes, quantised.length);
+
+  return sha256Commitment(combined);
+}

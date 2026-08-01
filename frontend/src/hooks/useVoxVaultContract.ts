@@ -6,7 +6,9 @@ import {
   getBiometricCommitment,
   getRecoveryStatus,
   getRecoveryTimelock,
+  getChallengeState,
   type RecoveryStatus,
+  type ChallengeState,
 } from "../lib/contract";
 import { useWallet } from "./useWallet";
 
@@ -20,6 +22,7 @@ export function useVoxVaultContract() {
   const [commitment, setCommitment] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<RecoveryStatus | null>(null);
   const [timelock, setTimelock] = useState<bigint | null>(null);
+  const [challenge, setChallenge] = useState<ChallengeState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,17 +60,24 @@ export function useVoxVaultContract() {
     setIsLoading(true);
     setError(null);
     try {
-      const [nextOwner, nextCommitment, nextRecovery, nextTimelock] =
-        await Promise.all([
-          getOwner(contract),
-          getBiometricCommitment(contract),
-          getRecoveryStatus(contract),
-          getRecoveryTimelock(contract),
-        ]);
+      const [
+        nextOwner,
+        nextCommitment,
+        nextRecovery,
+        nextTimelock,
+        nextChallenge,
+      ] = await Promise.all([
+        getOwner(contract),
+        getBiometricCommitment(contract),
+        getRecoveryStatus(contract),
+        getRecoveryTimelock(contract),
+        getChallengeState(contract),
+      ]);
       setOwner(nextOwner);
       setCommitment(nextCommitment);
       setRecovery(nextRecovery);
       setTimelock(nextTimelock);
+      setChallenge(nextChallenge);
     } catch (err) {
       setError(
         `Could not read the contract — is VITE_CONTRACT_ADDRESS pointing at a deployed VoxVault on this network? (${
@@ -108,6 +118,7 @@ export function useVoxVaultContract() {
     commitment,
     recovery,
     timelock,
+    challenge,
     isOwner,
     isConnected,
     isSepoliaNetwork,

@@ -1,10 +1,10 @@
 {
   "network": "sepolia",
-  "deployedAt": "2026-08-01T12:42:15.421Z",
+  "deployedAt": "2026-08-01T13:31:25.719Z",
   "records": [
     {
       "label": "main",
-      "address": "0x978490eB9b67d4938fAdd3b86a080e67De8A43F9",
+      "address": "0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B",
       "owner": "0xf3E027F232fDe8316F5d101922C7B0eDBABf2686",
       "sessionKeyDuration": 1800,
       "recoveryTimelock": 172800,
@@ -14,12 +14,12 @@
         172800,
         []
       ],
-      "txHash": "0xb7423af3f1f5c026853d006fa127acee1f21259aff6a317fa7086f6ba4a5a976",
-      "blockNumber": 11396462
+      "txHash": "0xcaf776836e46fcffa00a2f8482f8b6625402c7180d55bc92414d472a525bb484",
+      "blockNumber": 11396693
     },
     {
       "label": "demo",
-      "address": "0xa08CFE0A1eB497ffa55ba6333cDe707508f3e8eC",
+      "address": "0x4e93fAEE4D9A5eFa0a53C21c40e1Cb0605308a29",
       "owner": "0xf3E027F232fDe8316F5d101922C7B0eDBABf2686",
       "sessionKeyDuration": 120,
       "recoveryTimelock": 180,
@@ -29,8 +29,8 @@
         180,
         []
       ],
-      "txHash": "0x106c4fada0d28d3389a7cd45089d7d2b351deaf95e765cdf79b4c6cd56789500",
-      "blockNumber": 11396464
+      "txHash": "0xe4e2007d2a354c49aab66357cb27791b3fe149bc249e0fd335bda381a29df80d",
+      "blockNumber": 11396695
     }
   ]
 }

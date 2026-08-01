@@ -33,6 +33,14 @@ contract VoxVault is Ownable, ReentrancyGuard {
     bytes32 public biometricCommitmentHash;
     uint256 public commitmentUpdatedAt;
 
+    // Liveness challenge. The contract issues a number, the owner must speak it
+    // aloud alongside their passphrase, and the number is mixed into the
+    // commitment. A recording made before the number was issued cannot contain
+    // it, which is what defeats replay of a captured sample.
+    uint256 public currentChallenge;
+    uint256 public challengeIssuedAt;
+    uint256 public constant CHALLENGE_TTL = 5 minutes;
+
     // Session key management
     struct SessionKeyInfo {
         uint256 expiry;
@@ -56,6 +64,13 @@ contract VoxVault is Ownable, ReentrancyGuard {
 
     event BiometricRegistered(address indexed owner, bytes32 commitmentHash, uint256 timestamp);
     event BiometricVerificationAttempted(bytes32 commitmentHash, bool clientMatched, uint256 timestamp);
+    event ChallengeIssued(uint256 challenge, uint256 expiresAt);
+    event ChallengeAnswered(
+        uint256 challenge,
+        bytes32 commitmentHash,
+        bool voiceMatched,
+        bool spokenChallengeMatched
+    );
 
     event SessionKeyRegistered(address indexed sessionKey, uint256 expiry);
     event SessionKeyRevoked(address indexed sessionKey);
@@ -112,6 +127,69 @@ contract VoxVault is Ownable, ReentrancyGuard {
         biometricCommitmentHash = commitmentHash;
         commitmentUpdatedAt = block.timestamp;
         emit BiometricRegistered(msg.sender, commitmentHash, block.timestamp);
+    }
+
+    /**
+     * @dev Issues a fresh 4-digit liveness challenge, replacing any outstanding
+     * one. The owner must then speak this number aloud together with their
+     * passphrase; the client transcribes it and mixes it into the commitment.
+     *
+     * Randomness is `prevrandao`-derived, which a proposer can bias. That is
+     * acceptable here because predicting the number buys an attacker nothing on
+     * its own — the defence is that a recording captured BEFORE issuance cannot
+     * contain the number, so a stale sample cannot answer. It is not a defence
+     * against someone who can make you speak on demand.
+     */
+    function issueChallenge() external onlyOwner {
+        uint256 challenge = (uint256(
+            keccak256(
+                abi.encodePacked(
+                    block.prevrandao,
+                    block.timestamp,
+                    msg.sender,
+                    currentChallenge
+                )
+            )
+        ) % 9000) + 1000; // always four digits, so it is unambiguous to read aloud
+
+        currentChallenge = challenge;
+        challengeIssuedAt = block.timestamp;
+        emit ChallengeIssued(challenge, block.timestamp + CHALLENGE_TTL);
+    }
+
+    /**
+     * @dev Consumes the outstanding challenge. Single-use and time-limited: the
+     * same answer can never be submitted twice, which is the replay defence the
+     * contract genuinely enforces.
+     *
+     * What it does NOT enforce: that you actually said the number, or that the
+     * voice was yours. Both are transcribed and compared in the browser, and
+     * arrive here as claims recorded in the event log. The contract has no
+     * access to audio and cannot adjudicate either.
+     */
+    function answerChallenge(
+        uint256 challenge,
+        bytes32 commitmentHash,
+        bool voiceMatched,
+        bool spokenChallengeMatched
+    ) external onlyOwner {
+        require(currentChallenge != 0, "no active challenge");
+        require(challenge == currentChallenge, "wrong challenge");
+        require(
+            block.timestamp <= challengeIssuedAt + CHALLENGE_TTL,
+            "challenge expired"
+        );
+
+        // Clear before emitting so a replay of this exact call reverts.
+        currentChallenge = 0;
+        challengeIssuedAt = 0;
+
+        emit ChallengeAnswered(
+            challenge,
+            commitmentHash,
+            voiceMatched,
+            spokenChallengeMatched
+        );
     }
 
     /**

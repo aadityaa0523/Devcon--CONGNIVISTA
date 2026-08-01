@@ -89,3 +89,30 @@ export async function getRecoveryTimelock(
 ): Promise<bigint> {
   return contract.recoveryTimelock();
 }
+
+export interface ChallengeState {
+  challenge: bigint;
+  issuedAt: bigint;
+  expiresAt: bigint;
+  isActive: boolean;
+}
+
+export async function getChallengeState(
+  contract: ethers.Contract
+): Promise<ChallengeState> {
+  const [challenge, issuedAt, ttl] = await Promise.all([
+    contract.currentChallenge(),
+    contract.challengeIssuedAt(),
+    contract.CHALLENGE_TTL(),
+  ]);
+
+  const expiresAt = issuedAt === 0n ? 0n : issuedAt + ttl;
+  const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+
+  return {
+    challenge,
+    issuedAt,
+    expiresAt,
+    isActive: challenge !== 0n && expiresAt > nowSeconds,
+  };
+}

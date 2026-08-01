@@ -21,6 +21,12 @@
  * Order statistics over the whole utterance sidestep alignment entirely.
  */
 
+import {
+  isSpeechRecognitionSupported,
+  startTranscription,
+  transcriptContainsChallenge,
+} from "./speech";
+
 // ============ Tunable constants ============
 
 /** Frame length in samples. At 16 kHz this is 64 ms. */
@@ -423,5 +429,53 @@ export async function captureVoiceSample(
     sampleRate,
     voicedFrameCount,
     durationSeconds: samples.length / sampleRate,
+  };
+}
+
+export interface ChallengeCaptureResult extends VoiceCaptureResult {
+  /** Everything the recogniser heard, for display when a challenge fails. */
+  transcript: string;
+  /** Whether the challenge digits were found in the transcript. */
+  challengeMatched: boolean;
+  /** False when the browser has no Web Speech API, so the check was skipped. */
+  transcriptionAvailable: boolean;
+}
+
+/**
+ * Capture a sample while simultaneously transcribing, to check the speaker said
+ * the challenge number aloud.
+ *
+ * Transcription runs alongside the recording rather than over the captured
+ * buffer, because the Web Speech API only consumes live microphone input — it
+ * cannot be fed a decoded AudioBuffer after the fact. Both therefore open the
+ * microphone at once, which Chromium permits.
+ *
+ * A longer default duration than plain capture: there is more to say.
+ */
+export async function captureVoiceWithChallenge(
+  challenge: number | string,
+  durationMs = 5000
+): Promise<ChallengeCaptureResult> {
+  const available = isSpeechRecognitionSupported();
+  const transcription = available ? startTranscription() : null;
+
+  let capture: VoiceCaptureResult;
+  try {
+    capture = await captureVoiceSample(durationMs);
+  } catch (err) {
+    // Never leave the recogniser holding the microphone if capture fails.
+    await transcription?.stop();
+    throw err;
+  }
+
+  const transcript = transcription ? await transcription.stop() : "";
+
+  return {
+    ...capture,
+    transcript,
+    transcriptionAvailable: available,
+    challengeMatched: available
+      ? transcriptContainsChallenge(transcript, challenge)
+      : false,
   };
 }

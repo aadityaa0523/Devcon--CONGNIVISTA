@@ -1,5 +1,6 @@
 import { ConnectWalletButton } from "./components/ConnectWalletButton";
 import { BiometricPanel } from "./components/BiometricPanel";
+import { ChallengePanel } from "./components/ChallengePanel";
 import { SessionKeyPanel } from "./components/SessionKeyPanel";
 import { RecoveryPanel } from "./components/RecoveryPanel";
 import { useVoxVaultContract } from "./hooks/useVoxVaultContract";
@@ -70,6 +71,7 @@ export default function App() {
       {error && <p style={warning}>{error}</p>}
 
       <BiometricPanel />
+      <ChallengePanel />
       <SessionKeyPanel />
       <RecoveryPanel />
 

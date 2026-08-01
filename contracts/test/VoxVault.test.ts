@@ -102,6 +102,99 @@ describe("VoxVault", () => {
     });
   });
 
+  describe("liveness challenge", () => {
+    const commitment = ethers.id("answer-commitment");
+
+    it("issues a four-digit challenge", async () => {
+      await expect(voxVault.connect(owner).issueChallenge()).to.emit(
+        voxVault,
+        "ChallengeIssued"
+      );
+
+      const challenge = await voxVault.currentChallenge();
+      expect(challenge).to.be.greaterThanOrEqual(1000);
+      expect(challenge).to.be.lessThanOrEqual(9999);
+    });
+
+    it("rejects challenge issuance by a non-owner", async () => {
+      await expect(
+        voxVault.connect(stranger).issueChallenge()
+      ).to.be.revertedWithCustomError(voxVault, "OwnableUnauthorizedAccount");
+    });
+
+    it("accepts the correct answer and clears the challenge", async () => {
+      await voxVault.connect(owner).issueChallenge();
+      const challenge = await voxVault.currentChallenge();
+
+      await expect(
+        voxVault.connect(owner).answerChallenge(challenge, commitment, true, true)
+      )
+        .to.emit(voxVault, "ChallengeAnswered")
+        .withArgs(challenge, commitment, true, true);
+
+      expect(await voxVault.currentChallenge()).to.equal(0);
+    });
+
+    it("cannot answer the same challenge twice", async () => {
+      // The replay defence the contract genuinely enforces: a captured answer
+      // is worthless once consumed.
+      await voxVault.connect(owner).issueChallenge();
+      const challenge = await voxVault.currentChallenge();
+
+      await voxVault
+        .connect(owner)
+        .answerChallenge(challenge, commitment, true, true);
+
+      await expect(
+        voxVault.connect(owner).answerChallenge(challenge, commitment, true, true)
+      ).to.be.revertedWith("no active challenge");
+    });
+
+    it("rejects an answer to a stale challenge value", async () => {
+      await voxVault.connect(owner).issueChallenge();
+      const first = await voxVault.currentChallenge();
+
+      // Issuing again replaces the outstanding challenge.
+      await voxVault.connect(owner).issueChallenge();
+
+      await expect(
+        voxVault.connect(owner).answerChallenge(first, commitment, true, true)
+      ).to.be.revertedWith("wrong challenge");
+    });
+
+    it("rejects an answer after the challenge expires", async () => {
+      await voxVault.connect(owner).issueChallenge();
+      const challenge = await voxVault.currentChallenge();
+
+      await time.increase(5 * 60 + 1);
+
+      await expect(
+        voxVault.connect(owner).answerChallenge(challenge, commitment, true, true)
+      ).to.be.revertedWith("challenge expired");
+    });
+
+    it("refuses an answer when no challenge is outstanding", async () => {
+      await expect(
+        voxVault.connect(owner).answerChallenge(1234, commitment, true, true)
+      ).to.be.revertedWith("no active challenge");
+    });
+
+    it("records a failed attempt rather than reverting", async () => {
+      // A wrong voice or an unspoken number is data, not an error: the contract
+      // logs the client's verdict so failures are auditable too.
+      await voxVault.connect(owner).issueChallenge();
+      const challenge = await voxVault.currentChallenge();
+
+      await expect(
+        voxVault
+          .connect(owner)
+          .answerChallenge(challenge, commitment, false, false)
+      )
+        .to.emit(voxVault, "ChallengeAnswered")
+        .withArgs(challenge, commitment, false, false);
+    });
+  });
+
   describe("session keys", () => {
     it("registers a session key with an expiry one duration ahead", async () => {
       const tx = await voxVault
