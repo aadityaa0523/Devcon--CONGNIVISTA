@@ -39,7 +39,7 @@ function Dashboard() {
   return (
     <main className="shell">
       <header className="masthead">
-        <VoiceOrb state={orbState} level={level} size={224} />
+        <VoiceOrb state={orbState} level={level} size={264} />
         <h1 className="wordmark">
           Prove it's you.
           <br />

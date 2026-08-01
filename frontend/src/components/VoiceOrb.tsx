@@ -10,17 +10,19 @@ interface Props {
 }
 
 /**
- * The visual signature of the product: a rippling orb driven by real microphone
- * amplitude while recording.
+ * The visual signature of the product: an orb that ripples with your voice.
  *
- * The ripple responds to `level`, which comes from an AnalyserNode on the live
- * capture stream — so it genuinely reacts to your voice rather than animating on
- * a timer. Falls back to a CSS-only glow if WebGL is unavailable.
+ * Amplitude comes from an AnalyserNode on the live capture stream, so the motion
+ * is genuinely your speech rather than a timer. Idle breathes slowly; listening
+ * throws concentric rings outward in proportion to how loudly you are speaking.
+ *
+ * The shader fades to zero alpha well inside the canvas bounds — otherwise the
+ * square edge of the canvas is visible against the page.
  */
-export function VoiceOrb({ state, level = 0, size = 220 }: Props) {
+export function VoiceOrb({ state, level = 0, size = 260 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // Read through a ref so the animation loop is never torn down and rebuilt as
-  // amplitude changes sixty times a second.
+  // Read through refs so the render loop is never rebuilt as amplitude changes
+  // sixty times a second.
   const levelRef = useRef(level);
   const stateRef = useRef(state);
   levelRef.current = level;
@@ -35,9 +37,17 @@ export function VoiceOrb({ state, level = 0, size = 220 }: Props) {
     canvas.height = size * dpr;
 
     const gl =
-      canvas.getContext("webgl", { alpha: true, premultipliedAlpha: false }) ||
+      canvas.getContext("webgl", {
+        alpha: true,
+        premultipliedAlpha: false,
+        antialias: true,
+      }) ||
       (canvas.getContext("experimental-webgl") as WebGLRenderingContext | null);
-    if (!gl) return;
+
+    if (!gl) {
+      canvas.classList.add("orb-fallback");
+      return;
+    }
 
     const vertexSrc = `
       attribute vec2 a_position;
@@ -50,14 +60,15 @@ export function VoiceOrb({ state, level = 0, size = 220 }: Props) {
     const fragmentSrc = `
       precision highp float;
       uniform float u_time;
-      uniform float u_level;
+      uniform float u_level;    // smoothed microphone amplitude, 0-1
+      uniform float u_active;   // 1.0 while listening
+      uniform float u_settled;  // 1.0 once a verdict has landed
       uniform vec3  u_colour;
-      uniform float u_settled;   // 1.0 = collapsed to a solid sphere
       varying vec2 v_uv;
 
       float hash(vec2 p) {
-        p = fract(p * vec2(123.34, 456.21));
-        p += dot(p, p + 45.32);
+        p = fract(p * vec2(127.1, 311.7));
+        p += dot(p, p + 34.23);
         return fract(p.x * p.y);
       }
 
@@ -65,39 +76,61 @@ export function VoiceOrb({ state, level = 0, size = 220 }: Props) {
         vec2 i = floor(p);
         vec2 f = fract(p);
         vec2 u = f * f * (3.0 - 2.0 * f);
-        float a = hash(i);
-        float b = hash(i + vec2(1.0, 0.0));
-        float c = hash(i + vec2(0.0, 1.0));
-        float d = hash(i + vec2(1.0, 1.0));
-        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+        return mix(
+          mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+          mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+          u.y);
       }
 
       void main() {
         vec2 uv = v_uv;
-        float dist = length(uv);
+        float d = length(uv);
 
-        // Amplitude drives ripple speed, depth and overall radius.
-        float amp    = u_level;
-        float radius = 0.52 + amp * 0.12;
-        float speed  = 1.6 + amp * 7.0;
-        float freq   = 11.0 + amp * 15.0;
+        // Everything past 0.95 is fully transparent, so the canvas edge never shows.
+        float envelope = smoothstep(0.95, 0.30, d);
+        if (envelope <= 0.001) {
+          gl_FragColor = vec4(0.0);
+          return;
+        }
 
-        float ripple = sin(dist * freq - u_time * speed) * 0.5 + 0.5;
-        float grain  = noise(uv * 3.5 + u_time * 0.6);
+        float amp = u_level;
 
-        // Settled state: quiet, even sphere with no ripple.
-        ripple = mix(ripple, 1.0, u_settled);
-        grain  = mix(grain, 0.85, u_settled);
+        // Idle breathes slowly; speaking drives rings outward, faster and deeper.
+        float breathe = sin(u_time * 0.9) * 0.5 + 0.5;
+        float coreR   = 0.10 + breathe * 0.012 + amp * 0.10;
+        float speed   = 1.1 + amp * 9.0;
+        float freq    = 13.0 + amp * 22.0;
+        float depth   = 0.18 + amp * 0.72 * u_active;
 
-        float body = smoothstep(radius, radius - 0.34, dist);
-        float halo = 0.055 / (dist + 0.04);
-        float energy = (ripple * 0.72 + 0.28) * (grain * 0.55 + 0.45);
+        // Concentric rings travelling outward from the core.
+        float rings = sin(d * freq - u_time * speed) * 0.5 + 0.5;
+        rings = pow(rings, 1.6);
 
-        vec3 colour = u_colour * energy * halo * body;
-        colour += u_colour * 0.16 * (1.0 - clamp(dist, 0.0, 1.0)) * (0.55 + amp);
+        // Break up the rings so they read as energy rather than a target pattern.
+        float grain = noise(uv * 3.0 + u_time * 0.45);
+        rings *= 0.55 + grain * 0.45;
 
-        float alpha = clamp(max(colour.r, max(colour.g, colour.b)), 0.0, 1.0);
-        gl_FragColor = vec4(colour, alpha);
+        float shell = smoothstep(0.62 + amp * 0.12, 0.16, d);
+        float ringLayer = rings * depth * shell;
+
+        // Bright core, swelling with amplitude.
+        float core = smoothstep(coreR, 0.0, d);
+
+        // Wide ambient halo.
+        float halo = exp(-d * 3.0) * (0.12 + amp * 0.30);
+
+        // Settled: rings stop, leaving a calm even sphere.
+        ringLayer = mix(ringLayer, shell * 0.32, u_settled);
+        core = mix(core, smoothstep(0.30, 0.0, d), u_settled);
+
+        float intensity = core * 1.15 + ringLayer + halo;
+        vec3 colour = u_colour * intensity;
+
+        // Hot centre reads white rather than saturated.
+        colour += vec3(1.0) * core * (0.34 + amp * 0.4);
+
+        float alpha = clamp(intensity * 1.5, 0.0, 1.0) * envelope;
+        gl_FragColor = vec4(colour * envelope, alpha);
       }`;
 
     function compile(type: number, src: string) {
@@ -126,17 +159,19 @@ export function VoiceOrb({ state, level = 0, size = 220 }: Props) {
 
     const uTime = gl.getUniformLocation(program, "u_time");
     const uLevel = gl.getUniformLocation(program, "u_level");
-    const uColour = gl.getUniformLocation(program, "u_colour");
+    const uActive = gl.getUniformLocation(program, "u_active");
     const uSettled = gl.getUniformLocation(program, "u_settled");
+    const uColour = gl.getUniformLocation(program, "u_colour");
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.clearColor(0, 0, 0, 0);
     gl.viewport(0, 0, canvas.width, canvas.height);
 
     const palette: Record<OrbState, [number, number, number]> = {
-      idle: [0.13, 0.62, 0.72],
+      idle: [0.11, 0.58, 0.70],
       listening: [0.13, 0.83, 0.93],
-      verified: [0.29, 0.87, 0.5],
+      verified: [0.29, 0.87, 0.50],
       failed: [0.98, 0.44, 0.52],
     };
 
@@ -149,18 +184,22 @@ export function VoiceOrb({ state, level = 0, size = 220 }: Props) {
 
     const render = (t: number) => {
       const current = stateRef.current;
-      // Ease toward the target so the orb breathes rather than jitters.
-      const target = current === "listening" ? levelRef.current : 0.06;
-      smoothed += (target - smoothed) * 0.16;
+      const listening = current === "listening";
+      // Rise fast so a sudden word registers, fall slower so it does not flicker.
+      const target = listening ? levelRef.current : 0.0;
+      const ease = target > smoothed ? 0.35 : 0.09;
+      smoothed += (target - smoothed) * ease;
 
       const [r, g, b] = palette[current];
-      gl.uniform1f(uTime, reduceMotion ? 0 : t * 0.001);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.uniform1f(uTime, reduceMotion ? 2.0 : t * 0.001);
       gl.uniform1f(uLevel, smoothed);
-      gl.uniform3f(uColour, r, g, b);
+      gl.uniform1f(uActive, listening ? 1 : 0);
       gl.uniform1f(
         uSettled,
         current === "verified" || current === "failed" ? 1 : 0
       );
+      gl.uniform3f(uColour, r, g, b);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       raf = requestAnimationFrame(render);
     };
@@ -173,13 +212,24 @@ export function VoiceOrb({ state, level = 0, size = 220 }: Props) {
     };
   }, [size]);
 
+  const meter = Math.round(Math.min(1, level) * 100);
+
   return (
-    <div className="orb" style={{ width: size, height: size }}>
+    <div className={`orb orb--${state}`} style={{ width: size, height: size }}>
       <canvas
         ref={canvasRef}
         style={{ width: size, height: size, display: "block" }}
         aria-hidden="true"
       />
+      {state === "listening" && (
+        <div className="orb-caption" role="status">
+          <span className="dot live" />
+          Listening
+          <span className="orb-meter" aria-hidden="true">
+            <span style={{ width: `${meter}%` }} />
+          </span>
+        </div>
+      )}
     </div>
   );
 }
