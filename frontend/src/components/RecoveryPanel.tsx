@@ -6,6 +6,7 @@ import {
   computeGuardianCommitment,
   generateGuardianSalt,
 } from "../lib/contract";
+import { describeTxError } from "../lib/errors";
 
 /**
  * Guardian registration and social recovery.
@@ -64,7 +65,7 @@ export function RecoveryPanel() {
         setStatus(`${label} — done.`);
         await refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(describeTxError(err));
         setStatus(null);
       } finally {
         setBusy(false);

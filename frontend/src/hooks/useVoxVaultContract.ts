@@ -10,6 +10,7 @@ import {
   type RecoveryStatus,
   type ChallengeState,
 } from "../lib/contract";
+import { describeTxError } from "../lib/errors";
 import { useWallet } from "./useWallet";
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS as string;
@@ -45,7 +46,7 @@ export function useVoxVaultContract() {
       } catch (err) {
         if (cancelled) return;
         setContract(null);
-        setError(err instanceof Error ? err.message : String(err));
+        setError(describeTxError(err));
       }
     }
 
@@ -81,7 +82,7 @@ export function useVoxVaultContract() {
     } catch (err) {
       setError(
         `Could not read the contract — is VITE_CONTRACT_ADDRESS pointing at a deployed VoxVault on this network? (${
-          err instanceof Error ? err.message : String(err)
+          describeTxError(err)
         })`
       );
     } finally {

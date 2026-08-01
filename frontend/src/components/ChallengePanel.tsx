@@ -6,6 +6,7 @@ import { compareFeatures, type ComparisonResult } from "../lib/quantization";
 import { commitmentFromFeaturesAndChallenge } from "../lib/hashing";
 import { isSpeechRecognitionSupported } from "../lib/speech";
 import { CountdownRing } from "./CountdownRing";
+import { describeTxError } from "../lib/errors";
 
 interface Outcome {
   comparison: ComparisonResult;
@@ -58,7 +59,7 @@ export function ChallengePanel() {
       await send((c) => c.issueChallenge());
       setStatus(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeTxError(err));
       setStatus(null);
     } finally {
       setBusy(false);
@@ -105,11 +106,7 @@ export function ChallengePanel() {
       await refresh();
     } catch (err) {
       setError(
-        err instanceof VoiceCaptureError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : String(err)
+        err instanceof VoiceCaptureError ? err.message : describeTxError(err)
       );
       setStatus(null);
     } finally {

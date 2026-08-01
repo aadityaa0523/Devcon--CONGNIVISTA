@@ -13,6 +13,7 @@ import {
 } from "../lib/sessionKey";
 import { getVoxVaultContract } from "../lib/contract";
 import { CountdownRing } from "./CountdownRing";
+import { describeTxError } from "../lib/errors";
 
 /** Gas float sent to the session key so it can pay for its own transactions. */
 const SESSION_KEY_GAS_FUNDING = "0.003";
@@ -90,7 +91,7 @@ export function SessionKeyPanel() {
       setRemaining(getSessionKeyRemainingTime());
       setStatus("Session active — transactions below need no further signing.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeTxError(err));
       setStatus(null);
     } finally {
       setBusy(false);
@@ -123,7 +124,7 @@ export function SessionKeyPanel() {
       setStatus(`Sent in block ${receipt?.blockNumber} with no signing prompt.`);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeTxError(err));
     } finally {
       setBusy(false);
     }
@@ -142,7 +143,7 @@ export function SessionKeyPanel() {
       await tx.wait();
       setStatus("Vault funded with 0.01 ETH.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeTxError(err));
     } finally {
       setBusy(false);
     }

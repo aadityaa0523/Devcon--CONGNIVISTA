@@ -4,6 +4,7 @@ import { useVoxVaultContract } from "../hooks/useVoxVaultContract";
 import { getCompressionStats } from "../lib/quantization";
 import { FEATURE_DIMS } from "../lib/biometrics";
 import { FeatureHeatmap } from "./FeatureHeatmap";
+import { describeTxError } from "../lib/errors";
 
 const compression = getCompressionStats(FEATURE_DIMS);
 
@@ -53,7 +54,7 @@ export function BiometricPanel() {
       const receipt = await send((c) => c.registerBiometric(result.commitment));
       setTxStatus(`Commitment published in block ${receipt?.blockNumber}`);
     } catch (err) {
-      setTxError(err instanceof Error ? err.message : String(err));
+      setTxError(describeTxError(err));
       setTxStatus(null);
     }
   };
@@ -72,7 +73,7 @@ export function BiometricPanel() {
       );
       setTxStatus(`Attempt logged in block ${receipt?.blockNumber}`);
     } catch (err) {
-      setTxError(err instanceof Error ? err.message : String(err));
+      setTxError(describeTxError(err));
       setTxStatus(null);
     }
   };
