@@ -1,131 +1,83 @@
 # VoxVault: Problem Statement
 
-## The Core Contradiction in Web3
+## The contradiction
 
-Today's blockchain wallets face an unsolvable dilemma:
+Strong authentication wants to know who you are. Privacy wants nobody to know.
 
-**Strong authentication requires proving who you are. But blockchain privacy demands that nobody knows who you are.**
+| Approach | How it fails |
+|---|---|
+| **Seed phrases** | Prove nothing about *you* — whoever holds the words is you. Phishable, losable, and a burden to store. |
+| **Centralised biometrics** | They work, but a server holding your voiceprint is a breach waiting to happen. You cannot rotate your voice. |
+| **Social recovery** | Adding a guardian usually publishes their address, leaking your social graph to anyone reading the chain. |
 
-### The Current Broken Model
-
-| Challenge | Today's Reality | Why It Fails |
-|-----------|-----------------|-------------|
-| **Seed Phrases** | Users memorize or store 12-24 words | Easy to phish, lose, or forget |
-| **Centralized Biometrics** | Face/fingerprint stored on company servers | Single breach exposes millions; conflicts with privacy |
-| **Social Recovery** | Friend guardians must be publicly named | Leaks social graph; guardians can be coerced |
-| **No Privacy in Auth** | Every signature reveals your public key | Blockchain observers link all your transactions |
-| **Account Takeover** | No recovery without trusting centralized entity | Single point of failure |
-
-### The Real Problem
-
-Web3 authentication is built on a **false choice**:
-- ✅ **High security** → requires revealing your identity
-- ✅ **Privacy** → means no strong auth
-
-**VoxVault solves this by proving you are you, without telling anyone who you are.**
+VoxVault's premise: prove a *match* without publishing the thing being matched. The device keeps the biometric; the chain keeps a commitment.
 
 ---
 
-## VoxVault's Breakthrough
+## What VoxVault actually does
 
-### Multi-Modal Behavioral Biometrics
-VoxVault captures three simultaneous, hard-to-forge signals:
-1. **Voice fingerprint** — MFCC features from your unique vocal patterns
-2. **Motion signature** — Device accelerometer/gyroscope data during enrollment
-3. **Touch dynamics** — Pressure, timing, and finger geometry while speaking
+### Voice, analysed locally
 
-**Combined**: A unique 308-dimensional feature vector that's:
-- **Impossible to fake** — requires your voice + your phone's motion + your touch simultaneously
-- **Impossible to steal** — never sent anywhere; stays on your device
-- **Impossible to replay** — motion data changes every time
+Roughly three seconds of speech becomes a **48-dimensional feature vector**, computed entirely in the browser:
 
-### Cryptographic Privacy Layer
-Raw biometric data **never leaves your device**.
+1. Record, downmix to mono, peak-normalise
+2. Gate out silence with an energy threshold
+3. Split into 1024-sample frames at 50% overlap
+4. Per frame: RMS energy, zero-crossing rate, and spectral centroid over a hand-written radix-2 FFT
+5. Collapse each series, and its frame-to-frame difference, into 8 order statistics
 
-Instead, VoxVault:
-1. Extracts the 308-dimensional feature vector locally (TensorFlow.js)
-2. Hashes it with SHA-256 → produces a deterministic commitment
-3. Stores only the hash on-chain
-4. During verification: "Does your fresh voice + motion hash match the stored commitment?"
+`3 features × 2 series × 8 statistics = 48 dimensions`
 
-**Result**: Blockchain sees zero biometric information. Only a hash.
+Order statistics are the load-bearing choice. Two recordings of the same phrase are never the same length or speed, so anything frame-aligned would fail. Order statistics sidestep alignment entirely.
 
-### Quantization for On-Chain Efficiency
-- 308-dimensional FP32 vector = 1,232 bytes
-- Compressed to INT8 = 308 bytes (4x smaller)
-- Compressed to binary = 39 bytes (32x smaller)
-- Lower gas costs, same verification accuracy
+### Compression
 
-### Account Abstraction for UX
-- **One voice command**: "Enable signature-free mode for 30 minutes"
-- **Session key registered** on-chain
-- **30 minutes of gasless transactions** — Paymaster covers fees
-- **No re-verification** until session expires
+| Form | Size | Reduction |
+|---|---|---|
+| float32 | 192 bytes | — |
+| INT8 | 48 bytes | 4× |
+| binary, 1 bit per dimension | 6 bytes | 32× |
 
-### Privacy-Preserving Social Recovery
-Guardian-based recovery without leaking guardian identities:
-- Guardians verify liveness (submit recent signature)
-- 48-hour timelock prevents collusion
-- Original owner can cancel with voice verification
-- Network sees recovery request, not guardian names
+Dimensions span very different scales — energy sits in [0,1] while spectral centroid runs to thousands of hertz — so fixed per-dimension divisors are applied before any quantisation. Without that step, binary quantisation is decided almost entirely by the centroid dimensions and discards everything else.
+
+### Liveness
+
+The contract issues a four-digit number. You must say it aloud with your passphrase; the browser transcribes it and mixes it into the commitment. A recording made before the number existed cannot contain it.
+
+The contract enforces that a challenge is **single-use** and expires after five minutes. Answer it twice and the second call reverts.
+
+### Session keys
+
+One passing verification registers a throwaway keypair on-chain with an expiry. Until it expires, transactions need no signing prompt. The key is funded with a small gas float — a fresh account cannot pay for its own transactions.
+
+### Social recovery with guardian privacy
+
+Guardians are stored as `keccak256(address, salt)`, never as raw addresses — so adding one does not publish who they are. A guardian can open a recovery; a 48-hour timelock delays it; the owner can cancel in the meantime.
 
 ---
 
-## Why This Matters
+## What it does not do
 
-### For Users
-- ✅ No seed phrases to lose or phish
-- ✅ Stronger than passwords (voice + motion + touch)
-- ✅ Zero privacy leakage in authentication
-- ✅ Smooth UX (one voice = 30 min signature-free)
-- ✅ Trustless recovery (no centralized service)
+Stated plainly, because a judge who finds these unmentioned will trust nothing else here.
 
-### For the Blockchain Ecosystem
-- ✅ **Unlinkability**: Each verification uses a fresh hash; observers can't link transactions
-- ✅ **Privacy + Security**: Proves identity without revealing it
-- ✅ **Self-Sovereign**: No server stores your biometric data
-- ✅ **Censorship-Resistant**: No centralized entity to shut down or compromise
+**The on-chain commitment gates nothing.** Two recordings never hash alike, so a `require(freshHash == storedHash)` check would either always revert, or "pass" only because the caller read the stored value — public chain state — and handed it straight back, which authenticates nothing. Authorisation is enforced by ordinary ECDSA signatures. Voice matching happens in the browser and decides what the UI is willing to attempt. What lands on-chain is a tamper-evident record that an enrolment happened.
 
-### For Web3 Adoption
-- ✅ Bridge the gap between security and privacy
-- ✅ Enable non-technical users to safely manage assets
-- ✅ Set a standard for privacy-preserving on-chain identity
+**Match quality is unproven.** The features are coarse. Self-consistency measured at 2.1% differing bits on real hardware, but consistency is not discrimination — no false-accept rate has been measured across a population. The UI therefore shows raw distances and an adjustable threshold rather than a pass/fail badge.
+
+**Guardian privacy ends when a guardian acts.** Their `msg.sender` is public from that moment on. Hidden until they act, not anonymous.
+
+**Speech recognition uploads audio to Google.** This applies only to the challenge digits, but it is a real exception to the privacy claim.
+
+**Voice only.** `DeviceMotionEvent` does not fire on desktops and touch events do not fire on trackpads, so motion and touch would have returned zeros on the demo machine. They were cut rather than faked.
+
+**No gas sponsorship.** Session keys remove signing prompts, not gas. There is no paymaster.
 
 ---
 
-## The Technical Innovation
+## Why this is the interesting version
 
-**Zero-Knowledge Biometrics Without ZK-Proofs:**
+The obvious design is Groth16 proofs: prove the fresh capture is within a threshold distance of the enrolment without revealing either. That is the right answer, and it is days of work.
 
-Instead of complex cryptography (Groth16, etc.), VoxVault uses:
-- **Behavioral uniqueness** → voice + motion are inherently hard to forge
-- **Cryptographic commitment** → hash proves match without revealing data
-- **On-device extraction** → no intermediary ever sees raw biometrics
-- **Deterministic verification** → same biometrics always hash to same commitment
+A tempting shortcut was also rejected: store the 6-byte binary vector on-chain and compute Hamming distance in Solidity. It would genuinely work, in about forty lines. But it publishes a replayable biometric template — and you cannot rotate your voice. That defeats the entire premise.
 
-This is **simpler, faster, and more private** than traditional biometric systems.
-
----
-
-## Built for Hackathons (100% Free)
-
-- ✅ **No paid APIs**: Web Audio, DeviceMotion, TensorFlow.js (all free)
-- ✅ **No costly infrastructure**: Sepolia testnet (free ETH from faucets)
-- ✅ **No license fees**: OpenZeppelin + Ethers.js (open-source)
-- ✅ **Free hosting**: Vercel/Netlify (free tier)
-- ✅ **Buildable in 6 hours**: Minimal scope, maximum impact
-
----
-
-## Vision
-
-VoxVault is a proof-of-concept for a new category of Web3 auth:
-
-**Privacy-preserving biometric identity that is:**
-- Decentralized (no central server)
-- Self-sovereign (user owns their biometric commitment)
-- Efficient (compressed features, minimal gas)
-- Accessible (works on any device with voice + motion sensors)
-- Auditable (commitment is on-chain, verifiable by anyone)
-
-**This is authentication for Web3's future.**
+So the shipped position is the honest one: the chain records, the client decides, and the trade-off is documented at the top of the contract source rather than hidden in it.

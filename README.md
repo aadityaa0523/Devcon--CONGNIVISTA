@@ -5,6 +5,24 @@ never uploaded; only a 32-byte commitment reaches the chain.
 
 Built for the Ethereum Build Sprint, NIT Trichy. **Sepolia testnet only.**
 
+## Team
+
+<!-- TODO: replace with real names and roll numbers before submitting -->
+| Name | Roll number |
+|---|---|
+| _(pending)_ | _(pending)_ |
+
+## Deployed contracts (Sepolia, both verified)
+
+| Instance | Address | Config |
+|---|---|---|
+| main | [`0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B`](https://sepolia.etherscan.io/address/0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B#code) | 30-min sessions, 48h timelock |
+| demo | [`0x4e93fAEE4D9A5eFa0a53C21c40e1Cb0605308a29`](https://sepolia.etherscan.io/address/0x4e93fAEE4D9A5eFa0a53C21c40e1Cb0605308a29#code) | 2-min sessions, 3-min timelock |
+
+Further reading: [PROBLEM_STATEMENT.md](PROBLEM_STATEMENT.md) ·
+[DEMO_PITCH_SCRIPT.md](DEMO_PITCH_SCRIPT.md) · [vault/](vault/) (Obsidian graph of
+the design reasoning)
+
 ---
 
 ## What it actually does

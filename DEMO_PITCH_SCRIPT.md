@@ -1,270 +1,206 @@
-# VoxVault: 3-Minute Hackathon Demo Pitch
+# VoxVault — 3-minute demo script
 
-**Total Length**: 3 minutes  
-**Format**: Screen recording + voiceover + live interaction  
-**Audience**: Hackathon judges, Web3 community
+Every claim below is one the shipped code can back up. Nothing here describes a
+feature that does not exist.
 
----
-
-## [INTRO - 0:00-0:30]
-
-**Voiceover**:
-> "Imagine a wallet that knows it's you... without ever knowing *who* you are."
-> 
-> "Today's Web3 wallets force a terrible choice: strong security or real privacy. You can't have both."
-> 
-> "Meet VoxVault. The privacy-first smart wallet authenticated by your unique voice, motion, and touch. No seed phrases. No biometric servers. No identity leakage."
-
-**Visual**:
-- Logo animation
-- Split screen: "Security vs. Privacy" dilemma
-- VoxVault logo + tagline
+**Before you record:** Chrome or Edge (Firefox has no Web Speech API), MetaMask on
+Sepolia as the owner account, vault funded via **Fund vault 0.01 ETH**, and a
+second funded account ready if you are showing recovery. Enrol once as a dry run
+so the first take is not your first attempt.
 
 ---
 
-## [PROBLEM - 0:30-1:00]
+## 0:00 — 0:25 · The problem
 
-**Voiceover**:
-> "Here's the problem nobody talks about: Traditional wallets are built on seed phrases. Complicated. Easy to phish. Easy to lose."
->
-> "And when they add biometrics? Your face and fingerprint get stored on some company's server. One breach, millions of people exposed."
-> 
-> "Meanwhile, blockchain observers watch your public key. Every transaction. Linked together. Your entire financial history is visible."
-> 
-> "We need something better."
+> "Every wallet today makes you choose. Seed phrases prove nothing about *you* —
+> whoever holds the words is you. Biometrics work, but they put your voiceprint on
+> somebody's server, and unlike a password you cannot rotate your voice."
 
-**Visual**:
-- Show seed phrase (12 words)
-- "Vulnerable to phishing" → red X
-- "Exposed in data breach" → red X
-- Blockchain explorer showing linked transactions
-- Privacy concerns highlighted
+> "VoxVault takes a third path: prove a match, without ever publishing the thing
+> being matched."
+
+**On screen:** the orb, idle. The tagline — *Prove it's you. Reveal nothing.*
 
 ---
 
-## [SOLUTION - 1:00-1:45]
+## 0:25 — 1:00 · Enrol
 
-**Voiceover**:
-> "VoxVault uses three things only *you* have: your voice, your phone's motion, and your touch."
-> 
-> "In two seconds, we capture a 308-dimensional behavioral biometric signature. On your device. Locally. It never leaves your phone."
+Click **Enrol**, say your passphrase.
 
-**Visual**:
-- [DEMO] User speaks + taps screen for 2 seconds
-- Microphone recording animation
-- Motion sensor visualization (accelerometer/gyroscope)
-- Touch pressure heatmap
+> "Three seconds of audio. The browser splits it into overlapping frames and
+> measures three things per frame — energy, zero-crossing rate, and spectral
+> centroid, over an FFT we wrote by hand. Those collapse into 48 numbers."
 
-**Voiceover continues**:
-> "Then comes the magic: We hash this commitment and store *only the hash* on-chain. Sepolia testnet. Free."
->
-> "No voice samples. No motion data. No personally identifiable information. Just a cryptographic proof that says: 'This hash matches the commitment.'"
-> 
-> "Your privacy is mathematically guaranteed."
+Point at the heatmap as it appears.
 
-**Visual**:
-- 308-dim feature vector → SHA-256 hash
-- On-chain storage: only `0x4a7f2c...` (the hash)
-- Smart contract interaction: "Verification successful ✅"
+> "That is the actual vector. Underneath, the same vector at one bit per
+> dimension — 192 bytes down to six."
+
+Approve the MetaMask prompt.
+
+> "What goes on-chain is a 32-byte hash. Not the audio. Not the vector."
+
+**On screen:** orb blooming with your voice, heatmap populating, commitment hash
+appearing.
 
 ---
 
-## [DEMO: Voice Verification - 1:45-2:15]
+## 1:00 — 1:25 · Verify, and the honest bit
 
-**Voiceover**:
-> "Let's see it work."
+Click **Verify**, say it again.
 
-**Live Demo**:
-1. **Enrollment** (first time)
-   - User speaks: "Enable VoxVault"
-   - Motion captured from phone
-   - Touch during speech
-   - Hash generated and stored on Sepolia
-   - Transaction confirmed: `0x1a2b3c...` ✅
+> "Two percent of bits differ. Cosine similarity, 0.98."
 
-2. **Verification** (immediate re-verification)
-   - User speaks again: "Unlock my wallet"
-   - Same voice + motion + touch pattern
-   - Local hash computed
-   - Matches stored hash → "Authorization granted" ✅
-   - No seed phrase. No OTP. Just your voice.
+Then say this — do not skip it:
 
-**Visual**:
-- Real-time waveform during speech
-- Motion graph live-plotting
-- Hash comparison: "New hash matches commitment"
-- Transaction receipt: `gas: 21k`, cost: ~0.0001 ETH (free from faucet)
+> "And here is what the chain does *not* do. Two recordings never hash alike, so
+> no contract function compares hashes for equality. If it did, it would either
+> always fail, or 'pass' only because you read the stored value off the public
+> chain and handed it back — which proves nothing. The matching happens here, in
+> the browser. What the chain holds is a tamper-evident record that enrolment
+> happened."
+
+> "We show the raw distance and the threshold slider rather than a green tick,
+> because whether this separates two people is an empirical question about the
+> microphone and the room — and we have not measured it across a population."
+
+**Why say this:** a judge who spots it themselves stops believing everything else.
+Said first, it reads as engineering judgement.
 
 ---
 
-## [FEATURE: Session Keys - 2:15-2:40]
+## 1:25 — 2:05 · Liveness challenge *(the centrepiece)*
 
-**Voiceover**:
-> "But here's where it gets powerful. One voice verification unlocks 30 minutes of signature-free transactions."
-> 
-> "Say: 'Enable free mode.'"
+Click **Request a challenge**. A four-digit number fills the panel.
 
-**Live Demo**:
-1. User speaks once
-2. Session key registered on-chain
-3. Expiry: 30 minutes from now
-4. **First transaction**: Swap 0.1 ETH for USDC (session-key signed)
-5. **Second transaction**: Send 0.05 USDC to friend (session-key signed)
-6. **Third transaction**: Claim airdrop (session-key signed)
-7. All three happen **without re-verifying voice** ✅
+> "The contract just generated that number. To answer, I have to say it out loud —
+> along with my passphrase."
 
-**Visual**:
-- Timer: "Session key active: 29:45 remaining"
-- Three transaction confirmations stacked
-- Gas costs: ~2k gas each (minimal, free testnet ETH)
-- No voice capture shown for txs 2 and 3
+Click **Answer challenge**, say the passphrase then the digits individually.
 
-**Voiceover**:
-> "All three transactions. Zero signature prompts after the first voice. That's UX that actually feels like Web3 should."
+> "Two independent checks: the voice matches enrolment, and I said today's number.
+> A recording made before that number existed cannot contain it."
+
+**Then the part that lands.** Click **Answer challenge** again.
+
+> "And it is single-use. The contract cleared it the moment it was consumed. This
+> reverts — that is the replay protection, and it is the part the chain genuinely
+> enforces, not something we are asking you to take on trust."
+
+**On screen:** giant digits, countdown ring, the live transcript, both ticks
+resolving, then the revert.
 
 ---
 
-## [TECHNICAL EDGE - 2:40-2:55]
+## 2:05 — 2:35 · Session keys
 
-**Voiceover**:
-> "Here's what makes this hackathon-ready:"
-> 
-> "We're using TensorFlow.js for audio processing. Web Audio API for capture. DeviceMotion for motion sensors. All free. All open-source."
-> 
-> "Smart contracts are simple: store a hash commitment, verify matches. No ZK-proofs. No complex circuits. Just cryptographic truth."
-> 
-> "Gas cost per verification: ~21k on Sepolia. Negligible. Future: quantization brings it to 5k."
+Click **Authorise with voice**, approve both prompts.
 
-**Visual**:
-- Tech stack cards flip:
-  - TensorFlow.js ✅
-  - Web Audio API ✅
-  - Ethers.js ✅
-  - OpenZeppelin ✅
-  - Sepolia Testnet ✅
-- Code snippet: `const hash = sha256(featureVector)` (clean, simple)
+> "One verification registers a throwaway keypair on-chain with a 30-minute
+> expiry. It also gets a small gas float — a fresh account cannot pay for its own
+> transactions, which most implementations forget."
+
+Send three transfers.
+
+> "Three transactions. No signing prompt on any of them. The key expires on-chain;
+> nobody has to trust that we forgot it."
+
+**On screen:** countdown ring draining, transactions stacking up.
 
 ---
 
-## [CLOSING - 2:55-3:00]
+## 2:35 — 2:50 · Recovery *(if time allows)*
 
-**Voiceover**:
-> "VoxVault proves you can have security *and* privacy in Web3."
-> 
-> "No compromises. No servers. No seed phrases. Just your voice, your device, and your wallet."
-> 
-> "The future of blockchain identity starts here."
+> "Guardians are stored as a hash of their address and a private salt — so adding
+> a guardian does not publish who they are. They prove membership by supplying the
+> salt when they act."
 
-**Visual**:
-- VoxVault logo
-- Social handles
-- "Built at [Hackathon Name] 2026"
-- GitHub repo link
-- Deployed contract address (Sepolia)
+> "A guardian can start a recovery. A 48-hour timelock delays it, and the owner
+> can cancel with their voice in the meantime. The owner always outranks the
+> guardians."
+
+If demonstrating live, switch to the demo instance first — 3-minute timelock
+instead of 48 hours.
 
 ---
 
-## 📋 Shot Checklist
+## 2:50 — 3:00 · Close
 
-- [ ] Intro: logo + problem statement (30 sec)
-- [ ] Problem: seed phrases, centralized biometrics, linkability (30 sec)
-- [ ] Solution: voice + motion + touch, hash-based commitment (45 sec)
-- [ ] **LIVE DEMO**: Enrollment → hash stored (30 sec)
-- [ ] **LIVE DEMO**: Voice verification → auth granted (30 sec)
-- [ ] **LIVE DEMO**: One voice → 3 session-key transactions (25 sec)
-- [ ] Tech stack + closing (20 sec)
+> "Two contracts on Sepolia, both verified — you can read the source, including
+> the comment explaining exactly what the commitment does and does not prove.
+> 37 tests. One of them exists because an earlier version made recovery
+> impossible to cancel, and a test caught it."
 
-**Total: ~3:10**
+> "Zero-knowledge proofs are the obvious next step. We did not have days. What we
+> have instead is a system that is honest about where the trust actually sits."
 
 ---
 
-## 🎬 Recording Notes
+## Shot checklist
 
-1. **Screen Recording Tool**: OBS Studio (free) or browser DevTools recorder
-2. **Audio**: Use clear microphone; speak at natural pace
-3. **Cursor**: Highlight clicks and interactions
-4. **Network**: Test Sepolia RPC beforehand; confirm transactions go through
-5. **Wallet**: Have 0.1+ Sepolia ETH ready (free from faucet)
-6. **Smart Contract**: Deploy before recording; have addresses ready
-7. **Backup**: Record locally; save as MP4 1080p 30fps
+- [ ] Orb idle, tagline visible
+- [ ] Enrol — orb reacting to voice, heatmap filling
+- [ ] Compression figures (192 → 48 → 6 bytes)
+- [ ] Verify — Hamming and cosine on screen
+- [ ] Challenge digits large and legible
+- [ ] Both ticks resolving
+- [ ] **Second answer attempt reverting**
+- [ ] Three transfers, no MetaMask popup
+- [ ] Etherscan page showing verified source
+- [ ] Repo URL and contract address on the closing frame
 
----
+## Recording notes
 
-## 💡 Judge-Focused Angles
+- **Rehearse the second challenge attempt.** It is the strongest beat and the
+  easiest to fumble — the button disables once consumed, so request a fresh
+  challenge, answer it, then try to answer the same one again.
+- **Speak the digits individually** — "four, eight, two, nine", not "forty-eight
+  twenty-nine". The parser handles both, but individually transcribes far more
+  reliably.
+- Do not screen-share with `.env` open.
+- If the mic sounds quiet, watch the amplitude meter under "Listening" — a flat
+  bar means it is not picking you up.
 
-**Technical Judges**:
-- Emphasize: "No ZK-proofs, no overhead, works today with free tools"
-- Show: Deployed contract address on Sepolia
-- Highlight: Feature extraction happens on-device; no server dependency
+## Questions you will be asked
 
-**Web3/UX Judges**:
-- Emphasize: "No seed phrases, no phishing risk"
-- Show: Session keys enable smooth 30-minute UX
-- Highlight: One voice = 3 transactions (frictionless)
+**"Could I just record your voice and replay it?"**
+Against plain verification, yes — and that is why the liveness challenge exists.
+You cannot know today's number in advance.
 
-**Privacy/Security Judges**:
-- Emphasize: "Biometric data never leaves device"
-- Show: Hash-based commitment (no raw data on-chain)
-- Highlight: Guardian recovery without identity leakage
+**"Does it ever reject anyone?"**
+We have not measured false-accept across a population, which is why the threshold
+is exposed rather than hidden. Self-consistency is 2.1% differing bits. That is an
+honest limitation, and it is in the README.
 
-**Hackathon Judges**:
-- Emphasize: "Built in 6 hours, 100% free tools, deployed to testnet"
-- Show: Working demo, not just slides
-- Highlight: Clean, auditable code
+**"Why not zero-knowledge proofs?"**
+They are the correct answer and they are days of work. We also rejected storing
+the vector on-chain for on-chain matching — it works, but it publishes a
+replayable biometric template, which defeats the point.
 
----
-
-## Sample Voiceover Script (Full Text)
-
-```
-[INTRO]
-Imagine a wallet that knows it's you without ever knowing who you are.
-Today's Web3 wallets force a terrible choice: strong security or real privacy.
-Meet VoxVault. The privacy-first smart wallet authenticated by your unique voice.
-No seed phrases. No biometric servers. No identity leakage.
-
-[PROBLEM]
-Here's the problem: Traditional wallets use seed phrases. Complicated. Easy to phish.
-Biometric wallets? Your face gets stored on a company server. One breach, millions exposed.
-And blockchain observers watch your public key. Every transaction linked.
-
-[SOLUTION]
-VoxVault uses three things only you have: your voice, your motion, and your touch.
-In two seconds, we capture a 308-dimensional behavioral signature on your device.
-Then we hash it and store only the hash on-chain.
-Your privacy is mathematically guaranteed.
-
-[DEMO]
-Let's see it work. User speaks... motion captured... [Sound of transaction confirmed]
-Enrollment complete. Hash stored on Sepolia.
-
-Now verification: User speaks again... local hash matches... Authorization granted.
-
-[SESSION KEYS]
-But here's the power: one voice unlocks 30 minutes of signature-free transactions.
-First transaction, second transaction, third transaction... all free from re-verification.
-
-[TECH]
-Built with TensorFlow.js, Web Audio API, Ethers.js. All free. All open-source.
-Gas cost per verification: 21k on Sepolia. Negligible.
-
-[CLOSING]
-VoxVault proves you can have security and privacy in Web3.
-No compromises. No servers. No seed phrases.
-The future of blockchain identity starts here.
-```
+**"So what does the blockchain actually add?"**
+Session key expiry, the recovery timelock, guardian membership, and single-use
+challenge consumption are all enforced on-chain. The biometric is the client-side
+gate. We do not claim otherwise.
 
 ---
 
-## 🚀 Devfolio Submission Text (Based on This Pitch)
+## Devfolio submission text
 
-**Title**: VoxVault: Privacy-First Voiceprint Smart Wallet
+VoxVault is a smart wallet authorised by your voice. Audio is analysed entirely in
+the browser — three seconds of speech becomes a 48-dimensional feature vector via
+a hand-written FFT, compressed 32× to six bytes, and only a SHA-256 commitment
+reaches the chain.
 
-**Description**:
-VoxVault is a privacy-preserving smart wallet that uses multi-modal behavioral biometrics (voice + motion + touch) for authentication—without ever revealing your biometric data. Users prove their identity via a cryptographic hash commitment stored on-chain, enabling strong security without privacy leakage. Features include 30-minute session keys for gasless transactions, guardian-based social recovery, and quantized feature compression. Built with TensorFlow.js, Web Audio API, Ethers.js, and Sepolia testnet—100% free and open-source. Deployed and demoed working end-to-end.
+A liveness challenge defeats replayed recordings: the contract issues a four-digit
+number you must speak aloud, and it is single-use and time-limited on-chain. One
+verification unlocks 30 minutes of signature-free transactions through an
+expiring session key. Social recovery stores guardians as salted hashes, so adding
+one does not publish their address, behind a 48-hour timelock the owner can
+cancel.
 
-**Track Alignment**: Privacy & Security / Account Abstraction
+We are explicit about the trust model: the on-chain commitment is a tamper-evident
+record, not an access gate — two recordings never hash alike, so no contract
+function compares them. Authorisation is ECDSA; the voice gates the client. That
+trade-off is documented at the top of the contract source.
 
-**Problem Statement**: Traditional wallets sacrifice privacy for security. Seed phrases are phishable; centralized biometrics leak data. VoxVault solves this by proving identity without revealing it—voice + motion signatures hashed and verified on-chain.
-
-**Solution**: On-device feature extraction, SHA-256 commitment storage, session-key transactions, and guardian recovery without identity leakage. All on free Sepolia testnet with minimal gas costs.
+Sepolia, both instances verified. 37 tests.
