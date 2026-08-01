@@ -71,6 +71,18 @@ function Dashboard() {
         </div>
       </header>
 
+      {!configured && (
+        <p className="notice warn">
+          <strong>No contract address configured.</strong> Locally, copy{" "}
+          <code>frontend/.env.example</code> to <code>frontend/.env.local</code>{" "}
+          and set <code>VITE_CONTRACT_ADDRESS</code> from{" "}
+          <code>contracts/deployments/sepolia.json</code>. On Vercel, add it under
+          Settings → Environment Variables, then <strong>redeploy</strong> — Vite
+          inlines the value at build time, so an existing build will not pick it
+          up.
+        </p>
+      )}
+
       {error && <p className="notice error">{error}</p>}
 
       <div className="grid">
