@@ -38,6 +38,15 @@ export function useVoxVaultContract() {
         return;
       }
       try {
+        // No address configured is a setup state, not a fault — stay silent and
+        // leave the panels disabled rather than shouting at the user.
+        if (!ethers.isAddress(CONTRACT_ADDRESS)) {
+          if (cancelled) return;
+          setContract(null);
+          setError(null);
+          return;
+        }
+
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
         if (cancelled) return;

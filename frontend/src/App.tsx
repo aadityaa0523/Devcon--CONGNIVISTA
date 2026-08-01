@@ -71,15 +71,6 @@ function Dashboard() {
         </div>
       </header>
 
-      {!configured && (
-        <p className="notice warn">
-          <strong>VITE_CONTRACT_ADDRESS is not set.</strong> Copy{" "}
-          <code>frontend/.env.example</code> to <code>frontend/.env.local</code>{" "}
-          and fill in the address from{" "}
-          <code>contracts/deployments/sepolia.json</code>.
-        </p>
-      )}
-
       {error && <p className="notice error">{error}</p>}
 
       <div className="grid">
