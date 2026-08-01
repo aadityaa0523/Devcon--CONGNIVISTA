@@ -47,3 +47,6 @@ node_modules
 
 # Agent instructions, superseded by README as the source of truth
 CLAUDE.md
+BUILD_STATUS.md
+/.env.example
+frontend/src/App.css
