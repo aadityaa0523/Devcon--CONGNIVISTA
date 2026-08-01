@@ -246,7 +246,7 @@ graph LR
     class WCG,KL,ZK limit
 ```
 *Exception: the liveness digits pass through Chrome's `SpeechRecognition` for transcription — see [Security & Trust Model](#security--trust-model).*
-
+AegisVox is mentioned as VoxVault in the architecture.
 ```
 contracts/
   contracts/VoxVault.sol      ownership, commitment, session keys, recovery
