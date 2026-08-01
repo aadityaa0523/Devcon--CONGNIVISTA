@@ -1,0 +1,36 @@
+{
+  "network": "sepolia",
+  "deployedAt": "2026-08-01T12:42:15.421Z",
+  "records": [
+    {
+      "label": "main",
+      "address": "0x978490eB9b67d4938fAdd3b86a080e67De8A43F9",
+      "owner": "0xf3E027F232fDe8316F5d101922C7B0eDBABf2686",
+      "sessionKeyDuration": 1800,
+      "recoveryTimelock": 172800,
+      "constructorArgs": [
+        "0xf3E027F232fDe8316F5d101922C7B0eDBABf2686",
+        1800,
+        172800,
+        []
+      ],
+      "txHash": "0xb7423af3f1f5c026853d006fa127acee1f21259aff6a317fa7086f6ba4a5a976",
+      "blockNumber": 11396462
+    },
+    {
+      "label": "demo",
+      "address": "0xa08CFE0A1eB497ffa55ba6333cDe707508f3e8eC",
+      "owner": "0xf3E027F232fDe8316F5d101922C7B0eDBABf2686",
+      "sessionKeyDuration": 120,
+      "recoveryTimelock": 180,
+      "constructorArgs": [
+        "0xf3E027F232fDe8316F5d101922C7B0eDBABf2686",
+        120,
+        180,
+        []
+      ],
+      "txHash": "0x106c4fada0d28d3389a7cd45089d7d2b351deaf95e765cdf79b4c6cd56789500",
+      "blockNumber": 11396464
+    }
+  ]
+}
