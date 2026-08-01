@@ -189,26 +189,3 @@ Coverage includes: session key expiry and revocation; recovery timelock boundari
 
 There are no frontend tests. Given the time budget, contract correctness was worth more than component coverage — the contract is what holds funds.
 
----
-
-## What's Broken / Unfinished
-
-AegisVox's core loop — enrol, verify, transact, recover — runs end-to-end on Sepolia with 37 passing contract tests. A few things are still on the punch list:
-
-- **Guardian anonymity is partial** — addresses stay private until a guardian actually initiates recovery; a relayer would close that last gap.
-- **M-of-N guardian thresholds** — the contract already models `guardianThreshold`; the UI only exposes single-guardian recovery so far.
-- **No frontend test suite yet** — time was spent prioritising the 37 contract tests, since the contract is what holds funds.
-
-Everything else — commitment scheme, session keys, liveness challenge, recovery timelock — is implemented and tested.
-
----
-
-## License
-
-Released under the [MIT License](LICENSE).
-
-<div align="center">
-
-**Team Congnivista** · Ethereum Build Sprint, NIT Trichy
-
-</div>
