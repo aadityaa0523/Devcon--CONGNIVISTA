@@ -1,0 +1,20 @@
+{
+  "name": "voxvault",
+  "version": "0.1.0",
+  "description": "Privacy-First Voiceprint Smart Wallet",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "contracts"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w frontend",
+    "build": "npm run build -w frontend && npm run build -w contracts",
+    "test": "npm run test -w contracts",
+    "lint": "prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.1.1",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "voxvault-contracts",
+  "version": "0.1.0",
+  "description": "VoxVault smart contracts",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.ts --network sepolia",
+    "deploy:local": "hardhat run scripts/deploy.ts",
+    "verify": "hardhat verify",
+    "typechain": "hardhat typechain",
+    "postcompile": "node ../scripts/copy-abi.mjs"
+  },
+  "keywords": [
+    "voxvault",
+    "biometric",
+    "blockchain",
+    "smart-wallet"
+  ],
+  "author": "VoxVault",
+  "license": "MIT",
+  "type": "module"
+}
