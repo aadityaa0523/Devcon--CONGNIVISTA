@@ -47,7 +47,7 @@ Nothing about the voice itself ever leaves your device. What reaches Sepolia is 
 | 🎙️ **Voice enrolment** | 48-dimensional feature vector extracted client-side, only its hash is published |
 | 🔁 **Voice verification** | Fresh sample compared against the stored template, entirely in-browser |
 | 🎲 **Liveness challenge** | On-chain random digits must be spoken back, defeating stale recordings |
-| 🗝️ **Session keys** | One passing verification registers a throwaway keypair with an expiry — zero signing prompts until it lapses |
+| 🗝️ **Session keys** | One passing verification unlocks a throwaway keypair with an expiry — zero signing prompts until it lapses |
 | 🛡️ **Social recovery** | Guardians stored as `keccak256(address, salt)`, gated by a cancellable timelock |
 
 ---
@@ -72,8 +72,8 @@ Both instances share identical, verified bytecode on **Sepolia** — only the ti
 
 | Instance | Address | Session Key TTL | Recovery Timelock | Purpose |
 |---|---|---|---|---|
-| **main** | [`0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B`](https://sepolia.etherscan.io/address/0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B#code) | 30 min | 48 h | The real configuration |
-| **demo** | [`0x4e93fAEE4D9A5eFa0a53C21c40e1Cb0605308a29`](https://sepolia.etherscan.io/address/0x4e93fAEE4D9A5eFa0a53C21c40e1Cb0605308a29#code) | 2 min | 3 min | So `request → wait → execute` can be shown live |
+| **main** | [`0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B`](https://sepolia.etherscan.io/address/0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B) | 30 min | 48 h | The real configuration |
+| **demo** | [`0x4e93fAEE4D9A5eFa0a53C21c40e1Cb0605308a29`](https://sepolia.etherscan.io/address/0x4e93fAEE4D9A5eFa0a53C21c40e1Cb0605308a29) | 2 min | 3 min | So `request → wait → execute` can be shown live |
 
 ---
 
@@ -155,12 +155,13 @@ Dimensions live on very different scales — RMS is ~0–1, spectral centroid ru
 
 ## Architecture
 
-<img width="491" height="487" alt="Screenshot 2026-08-01 222755" src="https://github.com/user-attachments/assets/9a003781-33c6-4150-911c-14fc651ed4c3" />
-
+<p align="center">
+  <img src="assets/vault-graph.png" alt="AegisVox Obsidian design-reasoning graph, mapping every architectural decision to the trade-off behind it" width="760">
+</p>
 
 <p align="center"><em>The full system, mapped as a knowledge graph — every module, decision, and trade-off, linked back to what it connects to.</em></p>
 
-*Exception: the liveness digits pass through Chrome's `SpeechRecognition` for transcription — see [Security & Trust Model](#security--trust-model).* 
+*Exception: the liveness digits pass through Chrome's `SpeechRecognition` for transcription — see [Security & Trust Model](#security--trust-model).*
 
 ```
 contracts/
@@ -188,3 +189,26 @@ Coverage includes: session key expiry and revocation; recovery timelock boundari
 
 There are no frontend tests. Given the time budget, contract correctness was worth more than component coverage — the contract is what holds funds.
 
+---
+
+## What's Broken / Unfinished
+
+AegisVox's core loop — enrol, verify, transact, recover — runs end-to-end on Sepolia with 37 passing contract tests. A few things are still on the punch list:
+
+- **Guardian anonymity is partial** — addresses stay private until a guardian actually initiates recovery; a relayer would close that last gap.
+- **M-of-N guardian thresholds** — the contract already models `guardianThreshold`; the UI only exposes single-guardian recovery so far.
+- **No frontend test suite yet** — time was spent prioritising the 37 contract tests, since the contract is what holds funds.
+
+Everything else — commitment scheme, session keys, liveness challenge, recovery timelock — is implemented and tested.
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE).
+
+<div align="center">
+
+**Team Congnivista** · Ethereum Build Sprint, NIT Trichy
+
+</div>
