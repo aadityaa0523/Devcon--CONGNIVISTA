@@ -6,6 +6,7 @@
 
 Audio is analysed entirely in the browser and never uploaded — only a 32-byte commitment ever reaches the chain.
 
+[![Live Demo](https://img.shields.io/badge/live%20demo-aegisvox.vercel.app-black?logo=vercel)](https://aegisvox.vercel.app/)
 [![Network](https://img.shields.io/badge/network-Sepolia-8A2BE2)](https://sepolia.etherscan.io)
 [![Solidity](https://img.shields.io/badge/solidity-8.4%25-363636)](contracts/)
 [![TypeScript](https://img.shields.io/badge/typescript-81%25-3178C6)](frontend/)
@@ -14,7 +15,7 @@ Audio is analysed entirely in the browser and never uploaded — only a 32-byte 
 
 Built by **Team Congnivista** for the Ethereum Build Sprint · NIT Trichy
 
-**[Problem Statement](PROBLEM_STATEMENT.md) · [Demo Pitch Script](DEMO_PITCH_SCRIPT.md) · [Design Vault](vault/)**
+**[Live Demo](https://aegisvox.vercel.app/) · [Problem Statement](PROBLEM_STATEMENT.md) · [Demo Pitch Script](DEMO_PITCH_SCRIPT.md) · [Design Vault](vault/)**
 
 </div>
 
@@ -23,6 +24,7 @@ Built by **Team Congnivista** for the Ethereum Build Sprint · NIT Trichy
 ## Table of Contents
 
 - [Overview](#overview)
+- [Live Demo](#live-demo)
 - [Track: Privacy](#track-privacy)
 - [Deployed Contracts](#deployed-contracts)
 - [How It Works](#how-it-works)
@@ -52,6 +54,16 @@ Nothing about the voice itself ever leaves your device. What reaches Sepolia is 
 
 ---
 
+## Live Demo
+
+**[aegisvox.vercel.app](https://aegisvox.vercel.app/)**
+
+The frontend is deployed and connected to the `main` Sepolia instance — you'll need MetaMask, a microphone, and a Sepolia testnet balance to try enrolment, verification, and the liveness challenge yourself.
+
+> ⚠️ Microphone access requires a secure context, which Vercel's HTTPS deployment satisfies out of the box.
+
+---
+
 ## Track: Privacy
 
 **AegisVox is built for the Privacy track**, because privacy isn't a checkbox feature bolted on at the end — it's the constraint that shaped every design decision:
@@ -72,7 +84,7 @@ Both instances share identical, verified bytecode on **Sepolia** — only the ti
 
 | Instance | Address | Session Key TTL | Recovery Timelock | Purpose |
 |---|---|---|---|---|
-| **main** | [`0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B`](https://sepolia.etherscan.io/address/0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B) | 30 min | 48 h | The real configuration |
+| **main** | [`0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B`](https://sepolia.etherscan.io/address/0xEaAcab7C3A8771651987FAa0142E1Cef59BFF62B) | 30 min | 48 h | The real configuration — backs the [live demo](https://aegisvox.vercel.app/) |
 | **demo** | [`0x4e93fAEE4D9A5eFa0a53C21c40e1Cb0605308a29`](https://sepolia.etherscan.io/address/0x4e93fAEE4D9A5eFa0a53C21c40e1Cb0605308a29) | 2 min | 3 min | So `request → wait → execute` can be shown live |
 
 ---
@@ -131,6 +143,8 @@ npm run dev -w frontend
 
 > ⚠️ The microphone requires a **secure context** — `localhost` works; a plain-HTTP LAN address does not.
 
+Don't want to set any of this up? Just use the **[live demo](https://aegisvox.vercel.app/)** instead.
+
 ---
 
 ## The Voice Pipeline
@@ -155,11 +169,11 @@ Dimensions live on very different scales — RMS is ~0–1, spectral centroid ru
 
 ## Architecture
 
-<img width="491" height="487" alt="Screenshot 2026-08-01 222755" src="https://github.com/user-attachments/assets/5aa63d3f-830b-410d-8242-c8f225428e49" />
-
+<p align="center">
+  <img width="491" height="487" alt="AegisVox design-reasoning graph" src="https://github.com/user-attachments/assets/5aa63d3f-830b-410d-8242-c8f225428e49" />
+</p>
 
 <p align="center"><em>The full system, mapped as a knowledge graph — every module, decision, and trade-off, linked back to what it connects to.</em></p>
-
 ```mermaid
 graph LR
     IDX(["VoxVault Index"])
@@ -245,8 +259,9 @@ graph LR
     classDef limit fill:#3b1f24,stroke:#c05a6a,color:#f4d4da
     class WCG,KL,ZK limit
 ```
+
 *Exception: the liveness digits pass through Chrome's `SpeechRecognition` for transcription — see [Security & Trust Model](#security--trust-model).*
-AegisVox is mentioned as VoxVault in the architecture.
+
 ```
 contracts/
   contracts/VoxVault.sol      ownership, commitment, session keys, recovery
@@ -260,6 +275,8 @@ frontend/src/
   lib/contract.ts             typed contract access, guardian commitments
   components/                 biometric, session key and recovery panels
 ```
+
+> Note: `VoxVault.sol`/`VoxVault.test.ts` are the original contract/test filenames — the product is branded AegisVox everywhere else. Rename the underlying files if you want full consistency.
 
 ---
 
@@ -277,7 +294,7 @@ There are no frontend tests. Given the time budget, contract correctness was wor
 
 ## What's Broken / Unfinished
 
-AegisVox's core loop — enrol, verify, transact, recover — runs end-to-end on Sepolia with 37 passing contract tests. A few things are still on the punch list:
+AegisVox's core loop — enrol, verify, transact, recover — runs end-to-end on Sepolia with 37 passing contract tests, and is live at **[aegisvox.vercel.app](https://aegisvox.vercel.app/)**. A few things are still on the punch list:
 
 - **Guardian anonymity is partial** — addresses stay private until a guardian actually initiates recovery; a relayer would close that last gap.
 - **M-of-N guardian thresholds** — the contract already models `guardianThreshold`; the UI only exposes single-guardian recovery so far.
@@ -294,5 +311,7 @@ Released under the [MIT License](LICENSE).
 <div align="center">
 
 **Team Congnivista** · Ethereum Build Sprint, NIT Trichy
+
+**[Live Demo](https://aegisvox.vercel.app/)**
 
 </div>
