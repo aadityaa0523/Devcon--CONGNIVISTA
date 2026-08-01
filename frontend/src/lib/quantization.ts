@@ -1,123 +1,204 @@
 /**
- * Quantization utilities for feature vector compression
- * Reduces 308-dim float32 vector to INT8 (4x) or binary (32x) for on-chain efficiency
+ * Feature vector compression and comparison.
+ *
+ * Two jobs:
+ *   1. Compress the 48-dim float vector for a compact on-chain commitment
+ *      (INT8 = 4x smaller, binary = 32x smaller).
+ *   2. Compare two captures well enough to decide whether the same person spoke.
+ *
+ * SCALE NORMALISATION MATTERS. The raw dimensions live on wildly different
+ * scales — RMS and zero-crossing rate sit in [0, 1] while spectral centroid runs
+ * to several thousand hertz. Mean-threshold binary quantisation over raw values
+ * would be decided almost entirely by the centroid dimensions and would discard
+ * everything else. So every comparison path normalises by fixed per-dimension
+ * divisors first. The divisors are constants, not fitted to data, which keeps the
+ * whole pipeline deterministic and reproducible.
  */
 
+import { FEATURE_DIMS } from "./biometrics";
+
 /**
- * Quantize a Float32Array to INT8 using min-max scaling
- * @param vector - 308-dimensional feature vector (Float32Array)
- * @returns Uint8Array of same length with values in [0, 255]
+ * Per-dimension divisors, matching the layout emitted by `extractVoiceFeatures`:
+ *
+ *   dims  0-7   RMS stats              (natural range ~0-1)
+ *   dims  8-15  ZCR stats              (natural range ~0-1)
+ *   dims 16-23  spectral centroid      (hertz, ~0-8000)
+ *   dims 24-31  RMS deltas             (small, ~0-0.5)
+ *   dims 32-39  ZCR deltas             (small, ~0-0.5)
+ *   dims 40-47  centroid deltas        (hertz, ~0-4000)
+ */
+const DIMENSION_SCALES: number[] = [
+  ...new Array(8).fill(1), // rms
+  ...new Array(8).fill(1), // zcr
+  ...new Array(8).fill(8000), // centroid (Hz)
+  ...new Array(8).fill(0.5), // rms delta
+  ...new Array(8).fill(0.5), // zcr delta
+  ...new Array(8).fill(4000), // centroid delta (Hz)
+];
+
+/**
+ * Bring every dimension onto a comparable scale. Must be applied before any
+ * quantisation or distance computation.
+ */
+export function normaliseScale(vector: Float32Array): Float32Array {
+  const out = new Float32Array(vector.length);
+  for (let i = 0; i < vector.length; i++) {
+    const divisor = DIMENSION_SCALES[i] ?? 1;
+    out[i] = vector[i] / divisor;
+  }
+  return out;
+}
+
+/**
+ * Quantise to 8 bits per dimension via min-max scaling. 4x smaller than float32.
+ * Lossy but order-preserving within the vector.
  */
 export function quantizeToInt8(vector: Float32Array): Uint8Array {
   if (vector.length === 0) {
-    throw new Error("Empty feature vector");
+    throw new Error("Cannot quantise an empty feature vector");
   }
 
-  const min = Math.min(...vector);
-  const max = Math.max(...vector);
-  const range = max - min === 0 ? 1 : max - min; // Avoid division by zero
+  const scaled = normaliseScale(vector);
 
-  const quantized = new Uint8Array(vector.length);
-  for (let i = 0; i < vector.length; i++) {
-    // Scale to [0, 255]
-    const scaled = ((vector[i] - min) / range) * 255;
-    quantized[i] = Math.round(Math.max(0, Math.min(255, scaled)));
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < scaled.length; i++) {
+    if (scaled[i] < min) min = scaled[i];
+    if (scaled[i] > max) max = scaled[i];
   }
+  const range = max - min || 1; // guard against a constant vector
 
-  return quantized;
+  const out = new Uint8Array(scaled.length);
+  for (let i = 0; i < scaled.length; i++) {
+    const v = Math.round(((scaled[i] - min) / range) * 255);
+    out[i] = Math.max(0, Math.min(255, v));
+  }
+  return out;
 }
 
 /**
- * Quantize a Float32Array to binary (1-bit per dimension) using mean thresholding
- * @param vector - 308-dimensional feature vector (Float32Array)
- * @returns Uint8Array where each bit represents whether the dimension is above mean (39 bytes for 308 dims)
+ * Quantise to 1 bit per dimension: is this dimension above the vector's mean?
+ * 48 dims collapse to 6 bytes — a 32x reduction.
  */
 export function quantizeToBinary(vector: Float32Array): Uint8Array {
   if (vector.length === 0) {
-    throw new Error("Empty feature vector");
+    throw new Error("Cannot quantise an empty feature vector");
   }
 
-  const mean = vector.reduce((a, b) => a + b, 0) / vector.length;
-  const byteCount = Math.ceil(vector.length / 8);
-  const bits = new Uint8Array(byteCount);
+  const scaled = normaliseScale(vector);
 
-  for (let i = 0; i < vector.length; i++) {
-    if (vector[i] > mean) {
-      const byteIndex = Math.floor(i / 8);
-      const bitIndex = i % 8;
-      bits[byteIndex] |= 1 << bitIndex;
+  let sum = 0;
+  for (let i = 0; i < scaled.length; i++) sum += scaled[i];
+  const mean = sum / scaled.length;
+
+  const bits = new Uint8Array(Math.ceil(scaled.length / 8));
+  for (let i = 0; i < scaled.length; i++) {
+    if (scaled[i] > mean) {
+      bits[i >> 3] |= 1 << (i & 7);
     }
   }
-
   return bits;
 }
 
+/** Population count of a byte. */
+function popcount8(byte: number): number {
+  let n = byte;
+  n = n - ((n >> 1) & 0x55);
+  n = (n & 0x33) + ((n >> 2) & 0x33);
+  return (n + (n >> 4)) & 0x0f;
+}
+
 /**
- * Compute Hamming distance between two binary-quantized vectors
- * Used for client-side fuzzy matching before on-chain verification
- * @param binary1 - First binary-quantized vector
- * @param binary2 - Second binary-quantized vector
- * @returns Number of differing bits
+ * Number of differing bits between two binary-quantised vectors.
+ * Lower means more similar; 0 means identical.
  */
-export function hammingDistance(binary1: Uint8Array, binary2: Uint8Array): number {
-  if (binary1.length !== binary2.length) {
-    throw new Error("Binary vectors must be same length");
+export function hammingDistance(a: Uint8Array, b: Uint8Array): number {
+  if (a.length !== b.length) {
+    throw new Error(
+      `Binary vectors must be the same length (got ${a.length} and ${b.length})`
+    );
   }
-
   let distance = 0;
-  for (let i = 0; i < binary1.length; i++) {
-    const xor = binary1[i] ^ binary2[i];
-    // Count set bits using Brian Kernighan's algorithm
-    for (let bit = 0; bit < 8; bit++) {
-      if ((xor & (1 << bit)) !== 0) {
-        distance++;
-      }
-    }
+  for (let i = 0; i < a.length; i++) {
+    distance += popcount8(a[i] ^ b[i]);
   }
-
   return distance;
 }
 
 /**
- * Compute cosine similarity between two float32 vectors (for comparison/testing)
- * Returns similarity in [0, 1] where 1 is perfect match
+ * Cosine similarity over the scale-normalised float vectors, in [-1, 1].
+ *
+ * More discriminating than Hamming distance because no information is thrown
+ * away. The UI shows both: Hamming demonstrates that the compressed
+ * representation still carries signal, cosine is the better matcher.
  */
-export function cosineSimilarity(vec1: Float32Array, vec2: Float32Array): number {
-  if (vec1.length !== vec2.length) {
-    throw new Error("Vectors must be same length");
+export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+  if (a.length !== b.length) {
+    throw new Error(
+      `Vectors must be the same length (got ${a.length} and ${b.length})`
+    );
   }
 
-  let dotProduct = 0;
-  let norm1 = 0;
-  let norm2 = 0;
+  const x = normaliseScale(a);
+  const y = normaliseScale(b);
 
-  for (let i = 0; i < vec1.length; i++) {
-    dotProduct += vec1[i] * vec2[i];
-    norm1 += vec1[i] * vec1[i];
-    norm2 += vec2[i] * vec2[i];
+  let dot = 0;
+  let normX = 0;
+  let normY = 0;
+  for (let i = 0; i < x.length; i++) {
+    dot += x[i] * y[i];
+    normX += x[i] * x[i];
+    normY += y[i] * y[i];
   }
 
-  const magnitude = Math.sqrt(norm1) * Math.sqrt(norm2);
-  if (magnitude === 0) {
-    return 0;
-  }
-
-  return dotProduct / magnitude;
+  const magnitude = Math.sqrt(normX) * Math.sqrt(normY);
+  return magnitude === 0 ? 0 : dot / magnitude;
 }
 
-/**
- * Get compression statistics for a feature vector
- */
-export function getCompressionStats(original: Float32Array): {
+export interface ComparisonResult {
+  /** Differing bits between the binary-quantised vectors. */
+  hammingDistance: number;
+  /** Total bits compared, so the distance can be read as a fraction. */
+  totalBits: number;
+  /** Hamming distance as a fraction of total bits, in [0, 1]. */
+  normalisedHamming: number;
+  /** Cosine similarity over the scale-normalised floats, in [-1, 1]. */
+  cosineSimilarity: number;
+}
+
+/** Compute every comparison metric between an enrolled and a fresh capture. */
+export function compareFeatures(
+  enrolled: Float32Array,
+  fresh: Float32Array
+): ComparisonResult {
+  const enrolledBits = quantizeToBinary(enrolled);
+  const freshBits = quantizeToBinary(fresh);
+  const distance = hammingDistance(enrolledBits, freshBits);
+  const totalBits = enrolledBits.length * 8;
+
+  return {
+    hammingDistance: distance,
+    totalBits,
+    normalisedHamming: totalBits === 0 ? 0 : distance / totalBits,
+    cosineSimilarity: cosineSimilarity(enrolled, fresh),
+  };
+}
+
+export interface CompressionStats {
   originalBytes: number;
   int8Bytes: number;
   binaryBytes: number;
   int8Ratio: string;
   binaryRatio: string;
-} {
-  const originalBytes = original.length * 4; // Float32 = 4 bytes
-  const int8Bytes = original.length; // Uint8 = 1 byte
-  const binaryBytes = Math.ceil(original.length / 8);
+}
+
+/** Compression figures for the given vector length, for display in the UI. */
+export function getCompressionStats(
+  dimensions: number = FEATURE_DIMS
+): CompressionStats {
+  const originalBytes = dimensions * 4; // float32
+  const int8Bytes = dimensions;
+  const binaryBytes = Math.ceil(dimensions / 8);
 
   return {
     originalBytes,

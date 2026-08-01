@@ -39,7 +39,8 @@ export function saveSessionKey(
   }
 
   const data: SessionKeyData = {
-    address: ethers.Wallet.fromPrivateKey(privateKey).address,
+    // ethers v6 has no `Wallet.fromPrivateKey`; the constructor takes the key.
+    address: new ethers.Wallet(privateKey).address,
     privateKey,
     expiry: expiryTime,
     createdAt: Date.now(),

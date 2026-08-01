@@ -1,367 +1,428 @@
-import * as Meyda from "meyda";
-
 /**
- * Biometric capture and feature extraction for VoxVault
- * Captures voice, motion, and touch data from the browser
- * Extracts a 308-dimensional feature vector for verification
+ * VoxVault — voice feature extraction.
+ *
+ * Voice only. `DeviceMotionEvent` does not fire on desktops and touch events do
+ * not fire on trackpads, so motion and touch are not part of the working path;
+ * see README for why that scope call was made.
+ *
+ * Everything here is DETERMINISTIC. The same audio in always produces the same
+ * vector out — there is no randomness anywhere in this file. That property is
+ * what makes enrolment and verification comparable at all.
+ *
+ * Pipeline:
+ *   record → downmix to mono → peak-normalise → trim silence (VAD)
+ *   → split into overlapping frames
+ *   → per frame: RMS energy, zero-crossing rate, spectral centroid
+ *   → aggregate each series (and its frame-to-frame delta) into 8 order statistics
+ *   → 3 features x 2 series x 8 stats = 48 dimensions
+ *
+ * Aggregation is alignment-free on purpose: two recordings of the same phrase are
+ * never the same length or speed, so any frame-by-frame comparison would fail.
+ * Order statistics over the whole utterance sidestep alignment entirely.
  */
 
-export interface BiometricSample {
-  voiceFeatures: Float32Array; // MFCC + energy features (typically 156 dims = 13 MFCC * 12 frames)
-  motionFeatures: Float32Array; // Accelerometer + gyro stats (typically 108 dims = 6 axes * 18 stats)
-  touchFeatures: Float32Array; // Touch pressure + timing (typically 44 dims)
-  timestamp: number;
-  confidence: number; // 0-1 confidence score based on capture quality
+// ============ Tunable constants ============
+
+/** Frame length in samples. At 16 kHz this is 64 ms. */
+export const FRAME_SIZE = 1024;
+/** Frame advance in samples — 50% overlap. */
+export const HOP_SIZE = 512;
+/** Frames quieter than this fraction of peak RMS are treated as silence. */
+export const VAD_THRESHOLD = 0.12;
+/** Dimensionality of the emitted feature vector. */
+export const FEATURE_DIMS = 48;
+
+const BASE_FEATURE_COUNT = 3; // rms, zcr, spectral centroid
+const STATS_PER_SERIES = 8;
+
+// ============ Public types ============
+
+export interface RecordedAudio {
+  samples: Float32Array;
+  sampleRate: number;
 }
 
-export interface CaptureConfig {
-  voiceDurationMs?: number;
-  motionDurationMs?: number;
-  touchDurationMs?: number;
-  sampleRate?: number;
-  fftSize?: number;
+export interface VoiceCaptureResult {
+  features: Float32Array;
+  sampleRate: number;
+  /** Frames surviving the silence gate. Very low values mean a bad capture. */
+  voicedFrameCount: number;
+  durationSeconds: number;
 }
 
-const DEFAULT_CONFIG: CaptureConfig = {
-  voiceDurationMs: 3000, // 3 seconds
-  motionDurationMs: 3000,
-  touchDurationMs: 3000,
-  sampleRate: 16000,
-  fftSize: 2048,
-};
+export class VoiceCaptureError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VoiceCaptureError";
+  }
+}
 
-// Feature vector dimensions
-const VOICE_DIMS = 156; // 13 MFCC coefficients * 12 frames
-const MOTION_DIMS = 108; // 6 axes (accel x/y/z, gyro x/y/z) * 18 stats per axis
-const TOUCH_DIMS = 44; // Touch pressure, timing, velocity stats
-const TOTAL_DIMS = 308; // VOICE + MOTION + TOUCH
+// ============ FFT (iterative radix-2 Cooley-Tukey, in-place) ============
 
 /**
- * Capture voice sample and extract MFCC features using Meyda
+ * In-place complex FFT. `re`/`im` must both have the same power-of-two length.
  */
-export async function captureVoiceSample(
-  config: Partial<CaptureConfig> = {}
-): Promise<Float32Array> {
-  const durationMs = config.voiceDurationMs || DEFAULT_CONFIG.voiceDurationMs!;
-  const sampleRate = config.sampleRate || DEFAULT_CONFIG.sampleRate!;
+function fft(re: Float64Array, im: Float64Array): void {
+  const n = re.length;
+  if (n <= 1) return;
+  if ((n & (n - 1)) !== 0) {
+    throw new Error(`FFT length must be a power of two, got ${n}`);
+  }
+
+  // Bit-reversal permutation.
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) {
+      j ^= bit;
+    }
+    j ^= bit;
+    if (i < j) {
+      const tr = re[i];
+      re[i] = re[j];
+      re[j] = tr;
+      const ti = im[i];
+      im[i] = im[j];
+      im[j] = ti;
+    }
+  }
+
+  // Butterfly stages.
+  for (let len = 2; len <= n; len <<= 1) {
+    const angle = (-2 * Math.PI) / len;
+    const wRe = Math.cos(angle);
+    const wIm = Math.sin(angle);
+    for (let i = 0; i < n; i += len) {
+      let curRe = 1;
+      let curIm = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const uRe = re[i + k];
+        const uIm = im[i + k];
+        const vRe = re[i + k + len / 2] * curRe - im[i + k + len / 2] * curIm;
+        const vIm = re[i + k + len / 2] * curIm + im[i + k + len / 2] * curRe;
+        re[i + k] = uRe + vRe;
+        im[i + k] = uIm + vIm;
+        re[i + k + len / 2] = uRe - vRe;
+        im[i + k + len / 2] = uIm - vIm;
+        const nextRe = curRe * wRe - curIm * wIm;
+        curIm = curRe * wIm + curIm * wRe;
+        curRe = nextRe;
+      }
+    }
+  }
+}
+
+/** Periodic Hann window, cached per length. */
+const hannCache = new Map<number, Float64Array>();
+function hannWindow(length: number): Float64Array {
+  const cached = hannCache.get(length);
+  if (cached) return cached;
+  const w = new Float64Array(length);
+  for (let i = 0; i < length; i++) {
+    w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / length));
+  }
+  hannCache.set(length, w);
+  return w;
+}
+
+// ============ Per-frame features ============
+
+/** Root-mean-square energy — loudness of the frame. */
+export function frameRms(frame: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < frame.length; i++) {
+    sum += frame[i] * frame[i];
+  }
+  return Math.sqrt(sum / frame.length);
+}
+
+/**
+ * Zero-crossing rate — how often the waveform changes sign. Correlates loosely
+ * with pitch and strongly separates voiced from unvoiced (fricative) sounds.
+ */
+export function frameZcr(frame: Float32Array): number {
+  if (frame.length < 2) return 0;
+  let crossings = 0;
+  for (let i = 1; i < frame.length; i++) {
+    if ((frame[i] >= 0) !== (frame[i - 1] >= 0)) {
+      crossings++;
+    }
+  }
+  return crossings / (frame.length - 1);
+}
+
+/**
+ * Spectral centroid in Hz — the "centre of mass" of the magnitude spectrum,
+ * perceptually the brightness of the sound.
+ */
+export function frameSpectralCentroid(
+  frame: Float32Array,
+  sampleRate: number
+): number {
+  const n = frame.length;
+  const window = hannWindow(n);
+  const re = new Float64Array(n);
+  const im = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    re[i] = frame[i] * window[i];
+  }
+
+  fft(re, im);
+
+  // Only the first half of the spectrum is meaningful for a real input signal.
+  const bins = n / 2;
+  let weighted = 0;
+  let total = 0;
+  for (let k = 0; k < bins; k++) {
+    const magnitude = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+    const frequency = (k * sampleRate) / n;
+    weighted += frequency * magnitude;
+    total += magnitude;
+  }
+
+  return total === 0 ? 0 : weighted / total;
+}
+
+// ============ Statistics ============
+
+/** Linear-interpolated quantile over an already-sorted array. */
+function quantileSorted(sorted: number[], q: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0];
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+/**
+ * Collapse a variable-length series into 8 fixed order statistics:
+ * mean, population std, min, max, median, range, p25, p75.
+ */
+export function stats8(values: number[]): number[] {
+  if (values.length === 0) {
+    return new Array(STATS_PER_SERIES).fill(0);
+  }
+
+  let sum = 0;
+  for (const v of values) sum += v;
+  const mean = sum / values.length;
+
+  let variance = 0;
+  for (const v of values) variance += (v - mean) * (v - mean);
+  variance /= values.length;
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+
+  return [
+    mean,
+    Math.sqrt(variance),
+    min,
+    max,
+    quantileSorted(sorted, 0.5),
+    max - min,
+    quantileSorted(sorted, 0.25),
+    quantileSorted(sorted, 0.75),
+  ];
+}
+
+/** Frame-to-frame first difference — captures how the feature moves over time. */
+function deltas(values: number[]): number[] {
+  const out: number[] = [];
+  for (let i = 1; i < values.length; i++) {
+    out.push(values[i] - values[i - 1]);
+  }
+  return out;
+}
+
+// ============ Signal conditioning ============
+
+/** Average multi-channel audio down to a single channel. */
+export function downmixToMono(buffer: AudioBuffer): Float32Array {
+  const length = buffer.length;
+  const channels = buffer.numberOfChannels;
+  const mono = new Float32Array(length);
+  for (let c = 0; c < channels; c++) {
+    const data = buffer.getChannelData(c);
+    for (let i = 0; i < length; i++) {
+      mono[i] += data[i] / channels;
+    }
+  }
+  return mono;
+}
+
+/**
+ * Scale so the loudest sample sits at 1.0. Without this, features track how far
+ * you sat from the microphone rather than how you sound.
+ */
+export function peakNormalise(samples: Float32Array): Float32Array {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const a = Math.abs(samples[i]);
+    if (a > peak) peak = a;
+  }
+  if (peak === 0) return samples;
+  const out = new Float32Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    out[i] = samples[i] / peak;
+  }
+  return out;
+}
+
+/** Split into overlapping frames, discarding any trailing partial frame. */
+export function frameSignal(samples: Float32Array): Float32Array[] {
+  const frames: Float32Array[] = [];
+  for (let start = 0; start + FRAME_SIZE <= samples.length; start += HOP_SIZE) {
+    frames.push(samples.subarray(start, start + FRAME_SIZE));
+  }
+  return frames;
+}
+
+// ============ Feature extraction ============
+
+/**
+ * Turn raw audio into the 48-dimensional feature vector.
+ *
+ * Pure and synchronous — feed it the same samples twice and you get byte-identical
+ * output, which is what the unit tests rely on.
+ */
+export function extractVoiceFeatures(
+  samples: Float32Array,
+  sampleRate: number
+): { features: Float32Array; voicedFrameCount: number } {
+  const normalised = peakNormalise(samples);
+  const frames = frameSignal(normalised);
+
+  if (frames.length === 0) {
+    throw new VoiceCaptureError(
+      "Recording too short to analyse — speak for at least one second."
+    );
+  }
+
+  // Energy gate: drop frames that are essentially room tone, so the statistics
+  // describe speech rather than the length of the surrounding silence.
+  const rmsAll = frames.map(frameRms);
+  const peakRms = Math.max(...rmsAll);
+  const gate = peakRms * VAD_THRESHOLD;
+
+  const rms: number[] = [];
+  const zcr: number[] = [];
+  const centroid: number[] = [];
+
+  for (let i = 0; i < frames.length; i++) {
+    if (rmsAll[i] < gate) continue;
+    rms.push(rmsAll[i]);
+    zcr.push(frameZcr(frames[i]));
+    centroid.push(frameSpectralCentroid(frames[i], sampleRate));
+  }
+
+  if (rms.length < 4) {
+    throw new VoiceCaptureError(
+      "Almost no speech detected. Check the microphone and speak louder."
+    );
+  }
+
+  // 3 base series + their 3 delta series, 8 stats each = 48.
+  const features = Float32Array.from([
+    ...stats8(rms),
+    ...stats8(zcr),
+    ...stats8(centroid),
+    ...stats8(deltas(rms)),
+    ...stats8(deltas(zcr)),
+    ...stats8(deltas(centroid)),
+  ]);
+
+  if (features.length !== FEATURE_DIMS) {
+    throw new VoiceCaptureError(
+      `Internal error: expected ${FEATURE_DIMS} dims, produced ${features.length}`
+    );
+  }
+
+  return { features, voicedFrameCount: rms.length };
+}
+
+// ============ Recording ============
+
+/**
+ * Record from the default microphone for `durationMs` and decode to raw PCM.
+ *
+ * Requires a secure context (https or localhost) and a user gesture.
+ */
+export async function recordAudio(durationMs: number): Promise<RecordedAudio> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new VoiceCaptureError(
+      "Microphone access unavailable. This page must be served over https or localhost."
+    );
+  }
+
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    throw new VoiceCaptureError(
+      `Microphone permission denied or no input device found (${
+        err instanceof Error ? err.message : String(err)
+      })`
+    );
+  }
 
   try {
-    // Request microphone permission
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    // Create AudioContext and analyzer
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const audioSource = audioContext.createMediaStreamSource(stream);
-
-    // Use ScriptProcessorNode for sample collection (deprecated but functional)
-    const bufferSize = 4096;
-    const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
-
-    const audioBuffer: number[] = [];
-
-    processor.onaudioprocess = (event) => {
-      const inputData = event.inputBuffer.getChannelData(0);
-      audioBuffer.push(...Array.from(inputData));
+    const chunks: BlobPart[] = [];
+    const recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data);
     };
 
-    audioSource.connect(processor);
-    processor.connect(audioContext.destination);
-
-    // Record for the specified duration
-    await new Promise((resolve) => setTimeout(resolve, durationMs));
-
-    // Cleanup
-    processor.disconnect();
-    audioSource.disconnect();
-    stream.getTracks().forEach((track) => track.stop());
-
-    // Convert to Float32Array for feature extraction
-    const audioData = new Float32Array(audioBuffer);
-
-    // Extract MFCC features using Meyda
-    const analyzer = Meyda.createMeydaAnalyzer({
-      audioContext,
-      source: audioSource,
-      bufferSize,
-      featureExtractors: ["mfcc", "energy"],
+    const finished = new Promise<void>((resolve, reject) => {
+      recorder.onstop = () => resolve();
+      recorder.onerror = () =>
+        reject(new VoiceCaptureError("Recording failed unexpectedly."));
     });
 
-    // For MVP, simulate MFCC extraction by creating a 156-dim vector
-    // In production, would call analyzer.extract() on multiple frames
-    const mfccFeatures = new Float32Array(VOICE_DIMS);
+    recorder.start();
+    await new Promise((resolve) => setTimeout(resolve, durationMs));
+    recorder.stop();
+    await finished;
 
-    // Simulate reasonable MFCC values (in practice, extract from audio frames)
-    for (let i = 0; i < VOICE_DIMS; i++) {
-      // Random between -1 and 1 with some structure
-      mfccFeatures[i] = (Math.random() - 0.5) * 2;
+    const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+    const arrayBuffer = await blob.arrayBuffer();
+
+    const audioContext = new (window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext })
+        .webkitAudioContext)();
+    try {
+      const decoded = await audioContext.decodeAudioData(arrayBuffer);
+      return {
+        samples: downmixToMono(decoded),
+        sampleRate: decoded.sampleRate,
+      };
+    } finally {
+      await audioContext.close();
     }
-
-    analyzer.stop();
-
-    return mfccFeatures;
-  } catch (error) {
-    console.error("Voice capture failed:", error);
-    throw error;
+  } finally {
+    // Always release the microphone, so the browser's recording indicator clears
+    // even when extraction throws.
+    stream.getTracks().forEach((track) => track.stop());
   }
 }
 
 /**
- * Capture motion/accelerometer data
+ * Record and extract in one step — the entry point the UI calls.
  */
-export async function captureMotionSample(
-  config: Partial<CaptureConfig> = {}
-): Promise<Float32Array> {
-  const durationMs = config.motionDurationMs || DEFAULT_CONFIG.motionDurationMs!;
-
-  return new Promise((resolve, reject) => {
-    // Check if DeviceMotionEvent is available
-    if (!("DeviceMotionEvent" in window)) {
-      console.warn("DeviceMotionEvent not supported");
-      resolve(new Float32Array(MOTION_DIMS));
-      return;
-    }
-
-    // iOS 13+ requires permission request
-    if (
-      typeof (DeviceMotionEvent as any).requestPermission === "function"
-    ) {
-      (DeviceMotionEvent as any)
-        .requestPermission()
-        .then((permission: string) => {
-          if (permission === "granted") {
-            captureMotionData(durationMs)
-              .then(resolve)
-              .catch(reject);
-          } else {
-            console.warn("Motion permission denied");
-            resolve(new Float32Array(MOTION_DIMS));
-          }
-        })
-        .catch(reject);
-    } else {
-      // Non-iOS or older browsers
-      captureMotionData(durationMs)
-        .then(resolve)
-        .catch(reject);
-    }
-  });
+export async function captureVoiceSample(
+  durationMs = 3000
+): Promise<VoiceCaptureResult> {
+  const { samples, sampleRate } = await recordAudio(durationMs);
+  const { features, voicedFrameCount } = extractVoiceFeatures(
+    samples,
+    sampleRate
+  );
+  return {
+    features,
+    sampleRate,
+    voicedFrameCount,
+    durationSeconds: samples.length / sampleRate,
+  };
 }
-
-async function captureMotionData(durationMs: number): Promise<Float32Array> {
-  const samples: Array<{ accel: number[]; gyro: number[] }> = [];
-
-  return new Promise((resolve) => {
-    const handleMotion = (event: DeviceMotionEvent) => {
-      if (!event.acceleration) return;
-
-      samples.push({
-        accel: [
-          event.acceleration.x || 0,
-          event.acceleration.y || 0,
-          event.acceleration.z || 0,
-        ],
-        gyro: [
-          event.rotationRate?.alpha || 0,
-          event.rotationRate?.beta || 0,
-          event.rotationRate?.gamma || 0,
-        ],
-      });
-    };
-
-    window.addEventListener("devicemotion", handleMotion);
-
-    setTimeout(() => {
-      window.removeEventListener("devicemotion", handleMotion);
-
-      // Extract statistical features from samples
-      const features = new Float32Array(MOTION_DIMS);
-
-      if (samples.length === 0) {
-        // No motion data captured
-        resolve(features);
-        return;
-      }
-
-      // Compute stats per axis (18 stats for each of 6 axes = 108 dims)
-      let idx = 0;
-      const axes = ["accelX", "accelY", "accelZ", "gyroX", "gyroY", "gyroZ"];
-
-      axes.forEach((axis, axisIdx) => {
-        const isAccel = axisIdx < 3;
-        const values = samples.map((s) =>
-          isAccel ? s.accel[axisIdx % 3] : s.gyro[axisIdx % 3]
-        );
-
-        if (values.length > 0) {
-          // Mean, std, min, max, etc.
-          features[idx++] = mean(values);
-          features[idx++] = stdDev(values);
-          features[idx++] = Math.min(...values);
-          features[idx++] = Math.max(...values);
-          features[idx++] = median(values);
-          features[idx++] = range(values);
-        } else {
-          idx += 6;
-        }
-
-        // Additional stats for 18 total per axis
-        for (let i = 0; i < 12; i++) {
-          features[idx++] = Math.random() * 0.1; // Placeholder stats
-        }
-      });
-
-      resolve(features);
-    }, durationMs);
-  });
-}
-
-/**
- * Capture touch/pointer events
- */
-export async function captureTouchSample(
-  touchElement: HTMLElement | null,
-  config: Partial<CaptureConfig> = {}
-): Promise<Float32Array> {
-  const durationMs = config.touchDurationMs || DEFAULT_CONFIG.touchDurationMs!;
-  const features = new Float32Array(TOUCH_DIMS);
-
-  // Check if touch events are supported
-  if (!("ontouchstart" in window)) {
-    console.warn("Touch events not supported on this device");
-    return features;
-  }
-
-  if (!touchElement) {
-    console.warn("No touch element provided");
-    return features;
-  }
-
-  const touchData: Array<{
-    pressure?: number;
-    radiusX?: number;
-    radiusY?: number;
-    timestamp: number;
-  }> = [];
-
-  return new Promise((resolve) => {
-    const handleTouchStart = (e: TouchEvent) => {
-      const touch = e.touches[0];
-      touchData.push({
-        pressure: (touch as any).force || 0.5,
-        radiusX: (touch as any).radiusX || 0,
-        radiusY: (touch as any).radiusY || 0,
-        timestamp: e.timeStamp,
-      });
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      const touch = e.touches[0];
-      touchData.push({
-        pressure: (touch as any).force || 0.5,
-        radiusX: (touch as any).radiusX || 0,
-        radiusY: (touch as any).radiusY || 0,
-        timestamp: e.timeStamp,
-      });
-    };
-
-    touchElement.addEventListener("touchstart", handleTouchStart);
-    touchElement.addEventListener("touchmove", handleTouchMove);
-
-    setTimeout(() => {
-      touchElement.removeEventListener("touchstart", handleTouchStart);
-      touchElement.removeEventListener("touchmove", handleTouchMove);
-
-      // Extract features from touch data
-      if (touchData.length > 0) {
-        const pressures = touchData.map((t) => t.pressure || 0);
-        const durations = touchData
-          .slice(1)
-          .map((t, i) => t.timestamp - touchData[i].timestamp);
-
-        let idx = 0;
-        features[idx++] = mean(pressures);
-        features[idx++] = stdDev(pressures);
-        features[idx++] = mean(durations);
-        features[idx++] = stdDev(durations);
-        // Pad with zeros
-        while (idx < TOUCH_DIMS) {
-          features[idx++] = 0;
-        }
-      }
-
-      resolve(features);
-    }, durationMs);
-  });
-}
-
-/**
- * Build complete 308-dimensional feature vector from all modalities
- */
-export function buildFeatureVector(
-  voiceFeatures: Float32Array,
-  motionFeatures: Float32Array,
-  touchFeatures: Float32Array
-): Float32Array {
-  const vector = new Float32Array(TOTAL_DIMS);
-
-  // Concatenate in order: voice (156) + motion (108) + touch (44)
-  let idx = 0;
-
-  // Voice features
-  for (let i = 0; i < Math.min(VOICE_DIMS, voiceFeatures.length); i++) {
-    vector[idx++] = voiceFeatures[i];
-  }
-
-  // Motion features
-  for (let i = 0; i < Math.min(MOTION_DIMS, motionFeatures.length); i++) {
-    vector[idx++] = motionFeatures[i];
-  }
-
-  // Touch features
-  for (let i = 0; i < Math.min(TOUCH_DIMS, touchFeatures.length); i++) {
-    vector[idx++] = touchFeatures[i];
-  }
-
-  // Pad with zeros if needed
-  while (idx < TOTAL_DIMS) {
-    vector[idx++] = 0;
-  }
-
-  return vector;
-}
-
-// ============ Helper statistics functions ============
-
-function mean(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
-
-function stdDev(values: number[]): number {
-  if (values.length === 0) return 0;
-  const m = mean(values);
-  const variance =
-    values.reduce((a, b) => a + (b - m) * (b - m), 0) / values.length;
-  return Math.sqrt(variance);
-}
-
-function median(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 !== 0
-    ? sorted[mid]
-    : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-function range(values: number[]): number {
-  if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
-}
-
-export const FEATURE_DIMENSIONS = {
-  VOICE_DIMS,
-  MOTION_DIMS,
-  TOUCH_DIMS,
-  TOTAL_DIMS,
-};

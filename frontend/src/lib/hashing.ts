@@ -1,38 +1,49 @@
+/**
+ * Commitment hashing.
+ *
+ * Uses `ethers.sha256` rather than Node's `crypto`, which does not bundle into a
+ * browser build under Vite without a polyfill. The output is a 0x-prefixed
+ * 32-byte hex string, directly usable as a Solidity `bytes32`.
+ *
+ * What this hash is FOR: a tamper-evident record that an enrolment happened.
+ * What it is NOT for: verification. Two recordings never hash alike, so nothing
+ * on-chain compares hashes for equality. See the trust model note in VoxVault.sol.
+ */
+
 import { ethers } from "ethers";
+import { quantizeToBinary, quantizeToInt8 } from "./quantization";
 
-/**
- * Convert a Uint8Array to a bytes32 hex string compatible with Solidity
- */
-export function uint8ArrayToBytes32(data: Uint8Array): string {
-  if (data.length !== 32) {
-    throw new Error(`Expected 32 bytes, got ${data.length}`);
+/** Convert bytes to the 0x-prefixed hex string ethers expects. */
+export function toHex(data: Uint8Array): string {
+  let hex = "0x";
+  for (let i = 0; i < data.length; i++) {
+    hex += data[i].toString(16).padStart(2, "0");
   }
-  return "0x" + Array.from(data).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex;
 }
 
-/**
- * Compute SHA-256 commitment hash from a Uint8Array
- * Uses ethers.js sha256 which is browser-compatible
- */
+/** SHA-256 over raw bytes, returned as a bytes32 hex string. */
 export function sha256Commitment(data: Uint8Array): string {
-  // Convert Uint8Array to 0x-prefixed hex string for ethers.sha256
-  const hexString = "0x" + Array.from(data).map((b) => b.toString(16).padStart(2, "0")).join("");
-  return ethers.sha256(hexString);
+  if (data.length === 0) {
+    throw new Error("Refusing to hash an empty buffer");
+  }
+  return ethers.sha256(toHex(data));
 }
 
 /**
- * Hash a feature vector for on-chain commitment
+ * Commitment for on-chain storage, derived from the INT8-quantised vector.
+ *
+ * INT8 rather than binary because it retains more of the original signal, and the
+ * hash costs the same 32 bytes on-chain either way.
  */
-export function hashFeatureVector(quantizedVector: Uint8Array): string {
-  return sha256Commitment(quantizedVector);
+export function commitmentFromFeatures(features: Float32Array): string {
+  return sha256Commitment(quantizeToInt8(features));
 }
 
 /**
- * Verify that a fresh capture matches an enrollment (simple equality check)
- * Note: This is deterministic SHA-256 matching, which is fragile in practice
- * for real biometric matching. In production, use fuzzy matching (Hamming distance)
- * on the client-side before calling this.
+ * Commitment over the binary-quantised vector — 48 dims collapse to 6 bytes
+ * before hashing. Shown in the UI to make the compression story concrete.
  */
-export function verifyExactMatch(enrollmentHash: string, freshHash: string): boolean {
-  return enrollmentHash.toLowerCase() === freshHash.toLowerCase();
+export function binaryCommitmentFromFeatures(features: Float32Array): string {
+  return sha256Commitment(quantizeToBinary(features));
 }
